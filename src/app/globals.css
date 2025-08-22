@@ -1,1 +1,307 @@
 @import "tailwindcss";
+
+
+
+/* تحسينات CSS لتجربة السحب والإلقاط */
+
+/* تأثيرات السحب العامة */
+.dragging {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+.drag-source {
+  transition: all 0.2s ease;
+  transform-origin: center;
+}
+
+.drag-source:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.drag-source.dragging {
+  opacity: 0.5;
+  transform: scale(0.95);
+}
+
+/* تأثيرات المناطق المستهدفة */
+.drop-zone {
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.drop-zone::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(59, 130, 246, 0.1);
+  border: 2px dashed rgba(59, 130, 246, 0.3);
+  border-radius: 8px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.drop-zone.drag-over::before {
+  opacity: 1;
+}
+
+.drop-zone.drag-active {
+  background: rgba(34, 197, 94, 0.1);
+  border: 2px solid rgba(34, 197, 94, 0.5);
+  border-radius: 8px;
+}
+
+/* تأثيرات العنصر المسحوب */
+.drag-ghost {
+  position: fixed;
+  pointer-events: none;
+  z-index: 10000;
+  transform-origin: center;
+  animation: dragGhost 0.3s ease-out;
+}
+
+@keyframes dragGhost {
+  from {
+    opacity: 0;
+    transform: scale(0.8) rotate(-5deg);
+  }
+  to {
+    opacity: 0.95;
+    transform: scale(1.1) rotate(0deg);
+  }
+}
+
+/* تأثير النجاح */
+.drop-success {
+  animation: dropSuccess 0.6s ease-out forwards;
+}
+
+@keyframes dropSuccess {
+  0% {
+    transform: scale(0) rotate(0deg);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.2) rotate(180deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.8) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+/* تأثيرات الإشعارات */
+.notification {
+  animation: slideInFromRight 0.3s ease-out;
+}
+
+.notification.leaving {
+  animation: slideOutToRight 0.3s ease-in;
+}
+
+@keyframes slideInFromRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideOutToRight {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+/* تحسينات لوحة الأدوات */
+.tools-panel {
+  backdrop-filter: blur(20px);
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.trade-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-origin: center;
+}
+
+.trade-card:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+}
+
+.trade-card:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* تأثيرات النبض للألوان */
+.color-pulse {
+  animation: colorPulse 2s infinite;
+}
+
+@keyframes colorPulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* تحسينات الشبكة */
+.grid-snap-indicator {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  background: #3b82f6;
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+.grid-snap-indicator.active {
+  opacity: 1;
+  animation: snapPulse 0.5s ease;
+}
+
+@keyframes snapPulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.5);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* تأثيرات التمرير السلس */
+.smooth-scroll {
+  scroll-behavior: smooth;
+}
+
+/* تحسينات الأداء */
+.gpu-accelerated {
+  transform: translateZ(0);
+  will-change: transform, opacity;
+}
+
+/* تأثيرات الهوفر للأزرار */
+.interactive-button {
+  transition: all 0.2s ease;
+  transform-origin: center;
+}
+
+.interactive-button:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.interactive-button:active {
+  transform: scale(0.95);
+}
+
+/* تأثيرات الخلفية المتحركة */
+.animated-gradient {
+  background: linear-gradient(-45deg, #3b82f6, #8b5cf6, #ec4899, #06b6d4);
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+}
+
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* تحسينات إمكانية الوصول */
+.focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* تأثيرات المساعد البصري */
+.visual-helper {
+  position: relative;
+}
+
+.visual-helper::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #3b82f6;
+  border-radius: 50%;
+  border-top-color: transparent;
+  animation: spin 1s linear infinite;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity 0.3s ease;
+}
+
+.visual-helper.loading::after {
+  opacity: 1;
+}
+
+@keyframes spin {
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+/* تحسينات للشاشات الصغيرة */
+@media (max-width: 768px) {
+  .drag-ghost {
+    transform: scale(0.9);
+  }
+  
+  .tools-panel {
+    width: 100% !important;
+  }
+  
+  .trade-card {
+    padding: 12px;
+  }
+}
+
+/* تحسينات للحركة المنخفضة */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* تحسينات الشكل المظلم */
+@media (prefers-color-scheme: dark) {
+  .tools-panel {
+    background: rgba(17, 24, 39, 0.95);
+    border-color: rgba(75, 85, 99, 0.3);
+  }
+  
+  .drop-zone::before {
+    background: rgba(59, 130, 246, 0.2);
+    border-color: rgba(59, 130, 246, 0.5);
+  }
+}
