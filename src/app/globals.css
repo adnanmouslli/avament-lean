@@ -2,8 +2,6 @@
 
 
 
-/* تحسينات CSS لتجربة السحب والإلقاط */
-
 /* تأثيرات السحب العامة */
 .dragging {
   cursor: grabbing !important;

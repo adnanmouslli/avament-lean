@@ -356,9 +356,9 @@ export const FilterModal: React.FC<FilterModalProps> = ({
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+        <div className="flex items-center justify-between p-6 border-b border-gray-200 rounded-t-xl">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center">
               <Filter size={20} className="text-white" />
             </div>
             <div>
@@ -372,7 +372,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
             {getActiveFiltersCount() > 0 && onSaveFilter && (
               <button
                 onClick={() => setShowSaveDialog(true)}
-                className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors"
               >
                 <BookmarkPlus size={16} />
                 <span>حفظ الفلتر</span>
@@ -380,7 +380,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
             )}
             <button
               onClick={onClose}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
             >
               <X size={20} className="text-gray-500" />
             </button>
@@ -403,7 +403,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
                 <button
                   key={section.id}
                   onClick={() => setActiveSection(section.id)}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
                     activeSection === section.id
                       ? 'bg-blue-100 text-blue-700'
                       : 'text-gray-600 hover:bg-gray-100'
@@ -438,7 +438,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
                       value={filters.searchText || ''}
                       onChange={(e) => handleFilterChange('searchText', e.target.value)}
                       placeholder="ابحث في أسماء المهام..."
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
                   </div>
                 </div>
@@ -450,7 +450,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
                   <select
                     value={filters.author || ''}
                     onChange={(e) => handleFilterChange('author', e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="">جميع المؤلفين</option>
                     {authors.map(author => (
@@ -466,7 +466,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
                   <select
                     value={filters.taskType || 'all'}
                     onChange={(e) => handleFilterChange('taskType', e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
                     {TYPE_OPTIONS.map(option => (
                       <option key={option.value} value={option.value}>
@@ -494,7 +494,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
                           ...filters.dateRange,
                           startDate: e.target.value
                         })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       />
                     </div>
                     <div>
@@ -506,7 +506,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
                           ...filters.dateRange,
                           endDate: e.target.value
                         })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       />
                     </div>
                   </div>
@@ -527,7 +527,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
                           ...filters.duration,
                           min: parseInt(e.target.value) || 1
                         })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       />
                     </div>
                     <div>
@@ -540,7 +540,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
                           ...filters.duration,
                           max: parseInt(e.target.value) || 30
                         })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       />
                     </div>
                   </div>
@@ -559,7 +559,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
                       <button
                         key={option.value}
                         onClick={() => handleFilterChange('status', option.value)}
-                        className={`flex items-center space-x-3 p-3 rounded-lg border transition-all ${
+                        className={`flex items-center space-x-3 p-3 rounded-xl border transition-all ${
                           filters.status === option.value
                             ? 'border-blue-500 bg-blue-50 text-blue-700'
                             : 'border-gray-200 hover:border-gray-300'
@@ -588,7 +588,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
                           ...filters.progress,
                           min: parseInt(e.target.value) || 0
                         })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       />
                     </div>
                     <div>
@@ -602,7 +602,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
                           ...filters.progress,
                           max: parseInt(e.target.value) || 100
                         })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       />
                     </div>
                   </div>
@@ -621,7 +621,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
                       <button
                         key={option.value}
                         onClick={() => handleFilterChange('priority', option.value)}
-                        className={`flex items-center justify-center p-3 rounded-lg border transition-all ${
+                        className={`flex items-center justify-center p-3 rounded-xl border transition-all ${
                           filters.priority === option.value
                             ? 'border-blue-500 bg-blue-50 text-blue-700'
                             : 'border-gray-200 hover:border-gray-300'
@@ -646,7 +646,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
                       <button
                         key={color}
                         onClick={() => handleColorToggle(color)}
-                        className={`w-12 h-12 rounded-lg border-2 transition-all ${
+                        className={`w-12 h-12 rounded-xl border-2 transition-all ${
                           filters.colors?.includes(color)
                             ? 'border-gray-800 scale-110'
                             : 'border-gray-300 hover:border-gray-400'
@@ -692,14 +692,14 @@ export const FilterModal: React.FC<FilterModalProps> = ({
                         value={historySearchQuery}
                         onChange={(e) => setHistorySearchQuery(e.target.value)}
                         placeholder="ابحث في الفلاتر المحفوظة..."
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                       />
                     </div>
                     
                     <select
                       value={sortBy}
                       onChange={(e) => setSortBy(e.target.value as 'name' | 'date' | 'usage')}
-                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
                       <option value="date">الأحدث</option>
                       <option value="name">الاسم</option>
@@ -708,7 +708,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
 
                     <button
                       onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
-                      className={`flex items-center space-x-2 px-3 py-2 rounded-lg border transition-colors ${
+                      className={`flex items-center space-x-2 px-3 py-2 rounded-xl border transition-colors ${
                         showFavoritesOnly
                           ? 'border-yellow-500 bg-yellow-50 text-yellow-700'
                           : 'border-gray-300 hover:border-gray-400'
@@ -739,7 +739,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
                     filteredSavedFilters.map(savedFilter => (
                       <div
                         key={savedFilter.id}
-                        className="bg-gray-50 border border-gray-200 rounded-lg p-4 hover:bg-gray-100 transition-colors"
+                        className="bg-gray-50 border border-gray-200 rounded-xl p-4 hover:bg-gray-100 transition-colors"
                       >
                         <div className="flex items-start justify-between">
                           <div className="flex-1 min-w-0">
@@ -779,7 +779,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
                           <div className="flex items-center space-x-1 flex-shrink-0 ml-3">
                             <button
                               onClick={() => toggleFavorite(savedFilter)}
-                              className={`p-1.5 rounded-md transition-colors ${
+                              className={`p-1.5 rounded-xl transition-colors ${
                                 savedFilter.isFavorite
                                   ? 'text-yellow-500 hover:bg-yellow-100'
                                   : 'text-gray-400 hover:text-yellow-500 hover:bg-gray-200'
@@ -791,7 +791,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
                             
                             <button
                               onClick={() => handleLoadSavedFilter(savedFilter)}
-                              className="p-1.5 text-blue-500 hover:bg-blue-100 rounded-md transition-colors"
+                              className="p-1.5 text-blue-500 hover:bg-blue-100 rounded-xl transition-colors"
                               title="تحميل الفلتر"
                             >
                               <Filter size={14} />
@@ -804,7 +804,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
                                     onDeleteSavedFilter(savedFilter.id);
                                   }
                                 }}
-                                className="p-1.5 text-red-500 hover:bg-red-100 rounded-md transition-colors"
+                                className="p-1.5 text-red-500 hover:bg-red-100 rounded-xl transition-colors"
                                 title="حذف الفلتر"
                               >
                                 <Trash2 size={14} />
@@ -822,7 +822,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between p-6 border-t border-gray-200 bg-gray-50">
+        <div className="flex items-center justify-between p-6 border-t border-gray-200 bg-gray-50 rounded-b-xl">
           <button
             onClick={resetFilters}
             className="flex items-center space-x-2 px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
@@ -840,7 +840,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
             </button>
             <button
               onClick={applyFilters}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              className="px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium"
             >
               تطبيق الفلاتر
             </button>
@@ -851,15 +851,15 @@ export const FilterModal: React.FC<FilterModalProps> = ({
       {/* Save Filter Dialog */}
       {showSaveDialog && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
-            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 rounded-t-xl">
               <h3 className="text-lg font-semibold text-gray-900 flex items-center">
                 <BookmarkPlus size={20} className="ml-2" />
                 حفظ الفلتر
               </h3>
               <button
                 onClick={() => setShowSaveDialog(false)}
-                className="p-1 hover:bg-gray-100 rounded-md transition-colors"
+                className="p-1 hover:bg-gray-100 rounded-xl transition-colors"
               >
                 <X size={16} className="text-gray-500" />
               </button>
@@ -875,7 +875,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
                   value={saveFilterName}
                   onChange={(e) => setSaveFilterName(e.target.value)}
                   placeholder="مثل: مهام عالية الأولوية"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   autoFocus
                 />
               </div>
@@ -888,12 +888,12 @@ export const FilterModal: React.FC<FilterModalProps> = ({
                   value={saveFilterDescription}
                   onChange={(e) => setSaveFilterDescription(e.target.value)}
                   placeholder="وصف موجز للفلتر..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   rows={3}
                 />
               </div>
               
-              <div className="bg-gray-50 p-3 rounded-lg">
+              <div className="bg-gray-50 p-3 rounded-xl">
                 <h4 className="text-sm font-medium text-gray-700 mb-2">معاينة الفلتر:</h4>
                 <p className="text-sm text-gray-600">
                   {getFilterSummary(filters) || 'فلتر فارغ'}
@@ -901,7 +901,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
               </div>
             </div>
             
-            <div className="flex items-center justify-end space-x-3 p-4 border-t border-gray-200 bg-gray-50">
+            <div className="flex items-center justify-end space-x-3 p-4 border-t border-gray-200 bg-gray-50 rounded-b-xl">
               <button
                 onClick={() => setShowSaveDialog(false)}
                 className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
@@ -911,7 +911,7 @@ export const FilterModal: React.FC<FilterModalProps> = ({
               <button
                 onClick={handleSaveFilter}
                 disabled={!saveFilterName.trim()}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                className="px-4 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
               >
                 حفظ
               </button>

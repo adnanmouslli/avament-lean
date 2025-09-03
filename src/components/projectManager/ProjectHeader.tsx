@@ -16,7 +16,16 @@ import {
   X,
   Filter,
   Eye,
-  EyeOff
+  EyeOff,
+  BarChart3,
+  Cog,
+  Layers,
+  TrendingUp, // إضافة أيقونة للإحصائيات
+  ClipboardList,
+  ListTodo,
+  PanelsTopLeft,
+  Box,
+  Package
 } from 'lucide-react';
 import { FilterCriteria } from './filter/FilterModal';
 import { hasActiveFilters } from './filter/FilterUtils';
@@ -29,18 +38,24 @@ interface ViewState {
   isDragging: boolean;
 }
 
+export type ActiveTab = 'gantt' | 'settings' | 'templates' | 'analytics';
+
 interface ProjectHeaderProps {
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (collapsed: boolean) => void;
 
-    rightSidebarVisible?: boolean;
+  rightSidebarVisible?: boolean;
   onToggleRightSidebar?: () => void;
 
+  // Tab system
+  activeTab: ActiveTab;
+  onTabChange: (tab: ActiveTab) => void;
 
-  viewState: ViewState;
-  zoomIn: () => void;
-  zoomOut: () => void;
-  resetView: () => void;
+  // Gantt-specific props (only shown when activeTab is 'gantt')
+  viewState?: ViewState;
+  zoomIn?: () => void;
+  zoomOut?: () => void;
+  resetView?: () => void;
 
   onOpenTreeEditor?: () => void;
 
@@ -54,19 +69,24 @@ interface ProjectHeaderProps {
     filteredNodeCount: number;
   };
 
-  // إضافة الخصائص الجديدة لإعدادات العرض
   onOpenViewSettings?: () => void;
   viewSettings?: ViewSettings;
+
+  // Project name
+  projectName?: string;
+
+  leftSidebarVisible?: boolean;
+  onToggleLeftSidebar?: () => void;
+
 }
 
 export const ProjectHeader: React.FC<ProjectHeaderProps> = ({ 
   sidebarCollapsed, 
   setSidebarCollapsed, 
-
-    rightSidebarVisible = false,
+  rightSidebarVisible = false,
   onToggleRightSidebar,
-
-
+  activeTab,
+  onTabChange,
   viewState, 
   zoomIn, 
   zoomOut, 
@@ -77,9 +97,20 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
   onClearFilters,
   onOpenFilter,
   onOpenViewSettings,
-  viewSettings
+  viewSettings,
+  projectName = "AVAMENT",
+  leftSidebarVisible = false,
+  onToggleLeftSidebar,
+
+
 }) => {
 
+  const tabs = [
+    { id: 'gantt' as const, label: 'الجدول الزمني', icon: BarChart3 },
+    { id: 'analytics' as const, label: 'التحليلات', icon: TrendingUp },
+    { id: 'templates' as const, label: 'قطار المهام', icon: Layers },
+    { id: 'settings' as const, label: 'تخصيص', icon: Box }
+  ];
   // حساب عدد الإعدادات النشطة
   const getActiveViewSettingsCount = (): number => {
     if (!viewSettings) return 0;
@@ -94,10 +125,10 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
             className="p-1.5 rounded hover:bg-gray-100"
           >
-            {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+            {sidebarCollapsed ? <PanelLeftOpen size={16} className="text-black"/> : <PanelLeftClose size={16} className="text-black"/>}
           </button>
           
-          <div className="flex items-center space-x-2">
+           <div className="flex items-center space-x-2">
             <img 
               src="/AVAMENT_big.png" 
               alt="AVAMENT Logo" 
@@ -120,118 +151,152 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
               <span className="text-blue-600 ml-1">- LEAN</span>
             </h1>
           </div>
+
+          {/* Tab Navigation */}
+          <div className="flex items-center bg-gray-100 rounded-lg p-0.5 space-x-0.5 ml-6">
+            {tabs.map(tab => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => onTabChange(tab.id)}
+                  className={`flex items-center px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                    isActive
+                      ? 'bg-white text-blue-600 shadow-sm space-x-2'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-white/50'
+                  }`}
+                  title={tab.label}
+                >
+                  <Icon size={16} />
+                  {isActive && <span>{tab.label}</span>}
+                </button>
+              );
+            })}
+          </div>
+
         </div>
 
         <div className="flex items-center space-x-2">
           
-          {/* الفلاتر */}
-          <div className="flex items-center space-x-2">
-            {hasActiveFilters(activeFilters || {}) && (
-              <>
-                {filterStats && (
-                  <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-lg">
-                    {filterStats.filteredTaskCount} من {filterStats.originalTaskCount} مهمة
+          {/* Gantt-specific controls - only show when activeTab is 'gantt' */}
+          {activeTab === 'gantt' && (
+            <>
+              {/* الفلاتر */}
+              <div className="flex items-center space-x-2">
+                {hasActiveFilters(activeFilters || {}) && (
+                  <>
+                    {filterStats && (
+                      <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-lg">
+                        {filterStats.filteredTaskCount} من {filterStats.originalTaskCount} مهمة
+                      </div>
+                    )}
+                    <button
+                      onClick={onClearFilters}
+                      className="flex items-center space-x-1 px-2 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
+                      title="مسح جميع الفلاتر"
+                    >
+                      <X size={14} />
+                      <span>مسح</span>
+                    </button>
+                  </>
+                )}
+
+                <button
+                  onClick={onOpenFilter}
+                  className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                    hasActiveFilters(activeFilters || {})
+                      ? 'bg-blue-600 text-white shadow-md hover:bg-blue-700'
+                      : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+                  }`}
+                  title="فتح الفلاتر"
+                >
+                  <Filter size={16} />
+                  <span>فلتر</span>
+                  {hasActiveFilters(activeFilters || {}) && (
+                    <span className="bg-white text-blue-600 text-xs px-1.5 py-0.5 rounded-full font-bold">
+                      {Object.keys(activeFilters || {}).length}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {/* إعدادات العرض - أيقونة العين */}
+              <div className="flex items-center bg-gray-100 rounded-lg p-0.5 space-x-0.5">    
+                {onOpenViewSettings && (
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={onOpenViewSettings}
+                      className="flex items-center justify-center w-9 h-7 hover:bg-white/50 rounded-lg transition-colors"
+                      title="إعدادات العرض"
+                    >
+                      <Eye size={16} className="text-black" />
+                    </button>
                   </div>
                 )}
-                <button
-                  onClick={onClearFilters}
-                  className="flex items-center space-x-1 px-2 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
-                  title="مسح جميع الفلاتر"
-                >
-                  <X size={14} />
-                  <span>مسح</span>
-                </button>
-              </>
-            )}
-
-            <button
-              onClick={onOpenFilter}
-              className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-                hasActiveFilters(activeFilters || {})
-                  ? 'bg-blue-600 text-white shadow-md hover:bg-blue-700'
-                  : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
-              }`}
-              title="فتح الفلاتر"
-            >
-              <Filter size={16} />
-              <span>فلتر</span>
-              {hasActiveFilters(activeFilters || {}) && (
-                <span className="bg-white text-blue-600 text-xs px-1.5 py-0.5 rounded-full font-bold">
-                  {Object.keys(activeFilters || {}).length}
-                </span>
-              )}
-            </button>
-          </div>
-
-
-          {/* إعدادات العرض - أيقونة العين */}
-          <div className="flex items-center bg-gray-100 rounded-lg p-0.5 space-x-0.5">    
-
-            {onOpenViewSettings && (
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={onOpenViewSettings}
-                  className="flex items-center justify-center w-9 h-7 hover:bg-white/50 rounded-lg transition-colors"
-                  title="إعدادات العرض"
-                >
-                  <Eye size={16} />
-                </button>
-            
               </div>
-            )}
-          </div>
+
+              {/* أدوات التحرير */}
+              <div className="flex items-center bg-gray-100 rounded-lg p-0.5 space-x-0.5">    
+                {onOpenTreeEditor && (
+                  <button
+                    onClick={onOpenTreeEditor}
+                    className="flex items-center justify-center w-9 h-7 hover:bg-white/50 rounded-lg transition-colors"
+                    title="تحرير هيكل المشروع"
+                  >
+                    <GitBranch size={16} className="text-black"/>
+                  </button>
+                )}
+              </div>
+              
+              {/* أدوات التكبير والتصغير */}
+              {viewState && (
+                <div className="flex items-center bg-gray-100 rounded-lg p-0.5 space-x-0.5">
+                  <button onClick={zoomOut} className="p-1.5 hover:bg-white rounded text-xs" title="تصغير">
+                    <ZoomOut size={14} className="text-black"/>
+                  </button>
+                  <span className="px-2 text-xs font-medium min-w-12 text-center text-black" >
+                    {Math.round(viewState.zoom * 100)}%
+                  </span>
+                  <button onClick={zoomIn} className="p-1.5 hover:bg-white rounded text-xs" title="تكبير">
+                    <ZoomIn size={14} className="text-black"/>
+                  </button>
+                  <button onClick={resetView} className="p-1.5 hover:bg-white rounded text-blue-600 text-xs" title="إعادة تعيين">
+                    <RotateCcw size={14} className="text-black"/>
+                  </button>
+                </div>
+              )}
+            </>
+          )}
 
 
-          {/* أدوات التحرير */}
-          <div className="flex items-center bg-gray-100 rounded-lg p-0.5 space-x-0.5">    
-            {onOpenTreeEditor && (
-              <button
-                onClick={onOpenTreeEditor}
-                className="flex items-center justify-center w-9 h-7 hover:bg-white/50 rounded-lg transition-colors"
-                title="تحرير هيكل المشروع"
-              >
-                <GitBranch size={16} />
-              </button>
-            )}
-          </div>
-          
-          {/* أدوات التكبير والتصغير */}
-          <div className="flex items-center bg-gray-100 rounded-lg p-0.5 space-x-0.5">
-            <button onClick={zoomOut} className="p-1.5 hover:bg-white rounded text-xs" title="تصغير">
-              <ZoomOut size={14} />
+          {/* زر القوالب - يظهر فقط في تبويب Gantt */}
+          {activeTab === 'gantt' && onToggleLeftSidebar && (
+            <button
+              onClick={onToggleLeftSidebar}
+              className={`p-2 rounded-lg transition-colors ${
+                leftSidebarVisible 
+                  ? 'bg-green-100 text-green-600 hover:bg-green-200' 
+                  : 'hover:bg-gray-100 text-gray-600'
+              }`}
+              title={leftSidebarVisible ? "إخفاء القوالب" : "إظهار القوالب"}
+            >
+              <Package size={18} />
             </button>
-            <span className="px-2 text-xs font-medium min-w-12 text-center">
-              {Math.round(viewState.zoom * 100)}%
-            </span>
-            <button onClick={zoomIn} className="p-1.5 hover:bg-white rounded text-xs" title="تكبير">
-              <ZoomIn size={14} />
-            </button>
-            <button onClick={resetView} className="p-1.5 hover:bg-white rounded text-blue-600 text-xs" title="إعادة تعيين">
-              <RotateCcw size={14} />
-            </button>
-          </div>
+          )}
 
-          {/* شريط الأدوات الجانبي */}
-          {/* <button
-            onClick={toggleRightSidebar}
-            className="flex items-center gap-1 p-2 hover:bg-white/50 rounded-lg transition-colors"
-            title={rightSidebarVisible ? "إخفاء شريط الأدوات" : "إظهار شريط الأدوات"}
-          >
-            <Settings size={16} />
-            {rightSidebarVisible ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-          </button> */}
-
+          {/* Right sidebar toggle - always visible */}
           <button
-          onClick={onToggleRightSidebar}
-          className={`p-2 rounded-lg transition-colors ${
-            rightSidebarVisible 
-              ? 'bg-blue-100 text-blue-600 hover:bg-blue-200' 
-              : 'hover:bg-gray-100 text-gray-600'
-          }`}
-          title={rightSidebarVisible ? "إخفاء لوحة الأدوات" : "إظهار لوحة الأدوات"}
-        >
-           <Settings size={18} />
-        </button>
+            onClick={onToggleRightSidebar}
+            className={`p-2 rounded-lg transition-colors ${
+              rightSidebarVisible 
+                ? 'bg-blue-100 text-blue-600 hover:bg-blue-200' 
+                : 'hover:bg-gray-100 text-gray-600'
+            }`}
+            title={rightSidebarVisible ? "إخفاء لوحة الأدوات" : "إظهار لوحة الأدوات"}
+          >
+             <PanelsTopLeft size={18} className="text-black"/>
+          </button>
 
         </div>
       </div>

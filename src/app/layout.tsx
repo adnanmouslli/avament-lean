@@ -30,6 +30,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" dir="ltr" suppressHydrationWarning>
+      
       <body className={`${inter.variable} ${cairo.variable} font-sans antialiased`}>
         {/* 🌙 ThemeProvider: يدير الوضع المظلم/الفاتح */}
         <ThemeProvider
@@ -40,7 +41,7 @@ export default function RootLayout({
         >
           {/* 🔄 QueryProvider: يدير البيانات والـ API calls */}
           <QueryProvider>
-            <div className="min-h-screen bg-background">
+            <div className={`${cairo.variable} font-sans min-h-screen bg-background`}>
               {children}
             </div>
           </QueryProvider>
