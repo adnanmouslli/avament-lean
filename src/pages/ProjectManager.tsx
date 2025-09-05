@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { GanttCanvas } from '@/components/projectManager/GanttCanvas';
+import { GanttCanvas, Task, TaskComment, TaskHistoryEvent } from '@/components/projectManager/GanttCanvas';
 import { ProjectHeader, ActiveTab } from '@/components/projectManager/ProjectHeader';
 import { ProjectSettings, ProjectConfig, DelayReason } from '@/components/projectManager/ProjectSettings';
 import RightSidebar from '@/components/projectManager/RightSidebar';
@@ -16,29 +16,10 @@ import { applyFilterToTree, getFilterStatistics, hasActiveFilters } from '@/comp
 import { ActiveFiltersDisplay } from '@/components/projectManager/filter/ActiveFiltersDisplay';
 import  TaskTemplates, { TaskTemplate }  from '@/components/projectManager/TaskTemplates';
 import ProjectAnalytics from '@/components/Analytics/ProjectAnalytics';
+import { TaskDetailsSidebar } from '@/components/projectManager/TaskDetailsSidebar';
+import { TaskComments } from '@/components/projectManager/TaskComments';
+import { TaskHistory } from '@/components/projectManager/TaskHistory';
 
-// أضف هذه الـ interfaces
-interface Task {
-  id: string;
-  content: string;
-  startDay: number;
-  duration: number;
-  color: string;
-  progress?: number;
-  author?: string;
-  priority?: number;
-  row?: number;
-  type?: 'task' | 'milestone';
-}
-
-interface TaskLink {
-  id: string;
-  sourceTaskId: string;
-  targetTaskId: string;
-  sourcePoint: 'start' | 'end';
-  targetPoint: 'start' | 'end';
-  color: string;
-}
 
 // إضافة interface للمسؤول
 export interface Manager {
@@ -217,6 +198,36 @@ const ProjectManager: React.FC = () => {
   // إضافة state جديد للـ Templates Sidebar
   const [leftSidebarVisible, setLeftSidebarVisible] = useState(false);
 
+
+
+  const [selectedTask, setSelectedTask] = useState<{
+    task: Task;
+    nodeId: string;
+  } | null>(null);
+
+  const [showTaskDetails, setShowTaskDetails] = useState(false);
+
+
+
+
+
+  const [showTaskComments, setShowTaskComments] = useState(false);
+  const [showTaskHistory, setShowTaskHistory] = useState(false);
+
+
+
+  const handleOpenTaskDetails = useCallback(() => {
+    if (selectedTask) {
+      setShowTaskDetails(true);
+    }
+  }, [selectedTask]);
+
+  const handleCloseTaskDetails = useCallback(() => {
+    setShowTaskDetails(false);
+  }, []);
+
+
+
   // Tab change handler
   const handleTabChange = useCallback((tab: ActiveTab) => {
     setActiveTab(tab);
@@ -309,6 +320,25 @@ const ProjectManager: React.FC = () => {
       setFilteredHierarchyTree(hierarchyTree);
     }
   }, [hierarchyTree, activeFilters, handleApplyFilter]);
+
+
+    useEffect(() => {
+        const handleGlobalKeyDown = (e: KeyboardEvent) => {
+          if (e.key === 'Escape') {
+            // إغلاق جميع النوافذ والتحديدات
+            setSelectedTask(null);
+            setShowTaskDetails(false);
+            setShowTaskComments(false);
+            setShowTaskHistory(false);
+            setShowTreeEditor(false);
+            setShowViewSettings(false);
+            setShowFilterModal(false);
+          }
+        };
+
+        document.addEventListener('keydown', handleGlobalKeyDown);
+        return () => document.removeEventListener('keydown', handleGlobalKeyDown);
+      }, []);
 
   // Add handler for opening tree editor
   const handleOpenTreeEditor = useCallback(() => {
@@ -562,6 +592,219 @@ const ProjectManager: React.FC = () => {
   }, []);
 
   
+
+  const addHistoryEvent = useCallback((taskId: string, eventType: TaskHistoryEvent['eventType'], description: string, oldValue?: any, newValue?: any) => {
+  const newHistoryEvent: TaskHistoryEvent = {
+    id: `history-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    eventType,
+    description,
+    oldValue,
+    newValue,
+    userId: 'current-user',
+    userName: 'المستخدم الحالي',
+    timestamp: new Date()
+  };
+
+  setHierarchyTree(prev => {
+    const updateInTree = (nodes: HierarchyNode[]): HierarchyNode[] => {
+      return nodes.map(node => ({
+        ...node,
+        tasks: node.tasks.map(task =>
+          task.id === taskId
+            ? {
+                ...task,
+                history: [...(task.history || []), newHistoryEvent]
+              }
+            : task
+        ),
+        children: updateInTree(node.children)
+      }));
+    };
+    return updateInTree(prev);
+  });
+
+  // تحديث المهمة المحددة إذا كانت نفس المهمة
+  setSelectedTask(prev => {
+    if (prev && prev.task.id === taskId) {
+      return {
+        ...prev,
+        task: {
+          ...prev.task,
+          history: [...(prev.task.history || []), newHistoryEvent]
+        }
+      };
+    }
+    return prev;
+  });
+}, []);
+
+
+ const handleUpdateTask = useCallback((taskId: string, nodeId: string, updatedTask: Partial<Task>) => {
+  const currentTask = selectedTask?.task.id === taskId ? selectedTask.task : null;
+
+  // تحديث المهمة
+  setHierarchyTree(prev => {
+    const updateInTree = (nodes: HierarchyNode[]): HierarchyNode[] => {
+      return nodes.map(node => ({
+        ...node,
+        tasks: node.id === nodeId 
+          ? node.tasks.map(t => t.id === taskId ? { ...t, ...updatedTask } : t)
+          : node.tasks,
+        children: updateInTree(node.children)
+      }));
+    };
+    return updateInTree(prev);
+  });
+
+  // تحديث selectedTask إذا كانت نفس المهمة
+  if (selectedTask?.task.id === taskId) {
+    setSelectedTask(prev => prev ? { ...prev, task: { ...prev.task, ...updatedTask } } : null);
+  }
+
+  // إضافة أحداث التاريخ - فقط إذا كانت المهمة محددة حالياً
+  if (currentTask) {
+    const changes: string[] = [];
+    
+    if (updatedTask.content && updatedTask.content !== currentTask.content) {
+      changes.push(`تم تغيير اسم المهمة من "${currentTask.content}" إلى "${updatedTask.content}"`);
+    }
+    
+    if (updatedTask.progress !== undefined && updatedTask.progress !== (currentTask.progress || 0)) {
+      changes.push(`تم تغيير نسبة الإنجاز من ${currentTask.progress || 0}% إلى ${updatedTask.progress}%`);
+    }
+    
+    if (updatedTask.startDay !== undefined && updatedTask.startDay !== currentTask.startDay) {
+      changes.push(`تم تغيير يوم البداية من اليوم ${currentTask.startDay} إلى اليوم ${updatedTask.startDay}`);
+    }
+    
+    if (updatedTask.duration !== undefined && updatedTask.duration !== currentTask.duration) {
+      changes.push(`تم تغيير مدة المهمة من ${currentTask.duration} يوم إلى ${updatedTask.duration} يوم`);
+    }
+
+    if (updatedTask.managerId && updatedTask.managerId !== currentTask.managerId) {
+      const newManager = managers.find(m => m.id === updatedTask.managerId);
+      const oldManager = managers.find(m => m.id === currentTask.managerId);
+      changes.push(`تم تغيير المسؤول من "${oldManager?.name || 'غير محدد'}" إلى "${newManager?.name || 'غير محدد'}"`);
+    }
+
+    // إضافة أحداث التاريخ
+    changes.forEach(change => {
+      addHistoryEvent(taskId, 'updated', change);
+    });
+  }
+}, [selectedTask, managers, addHistoryEvent]);
+
+
+const handleTaskSelected = useCallback((task: Task | null, nodeId?: string) => {
+  if (task && nodeId) {
+    setSelectedTask({ task, nodeId });
+  } else {
+    setSelectedTask(null);
+
+    setShowTaskDetails(false);
+    setShowTaskComments(false);
+    setShowTaskHistory(false);
+  }
+}, []);
+
+
+
+const handleOpenTaskComments = useCallback(() => {
+  if (selectedTask) {
+    setShowTaskComments(true);
+  }
+}, [selectedTask]);
+
+const handleCloseTaskComments = useCallback(() => {
+  setShowTaskComments(false);
+}, []);
+
+const handleOpenTaskHistory = useCallback(() => {
+  if (selectedTask) {
+    setShowTaskHistory(true);
+  }
+}, [selectedTask]);
+
+const handleCloseTaskHistory = useCallback(() => {
+  setShowTaskHistory(false);
+}, []);
+
+
+const handleAddComment = useCallback((taskId: string, content: string) => {
+  if (!selectedTask) return;
+
+  const newComment: TaskComment = {
+    id: `comment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    userId: 'current-user', // يمكن الحصول على هذا من context المستخدم
+    userName: 'Adnan Mouslli', // يمكن الحصول على هذا من context المستخدم
+    content,
+    timestamp: new Date()
+  };
+
+  // إضافة التعليق للمهمة
+  setHierarchyTree(prev => {
+    const updateInTree = (nodes: HierarchyNode[]): HierarchyNode[] => {
+      return nodes.map(node => ({
+        ...node,
+        tasks: node.id === selectedTask.nodeId
+          ? node.tasks.map(task => 
+              task.id === taskId
+                ? { 
+                    ...task, 
+                    comments: [...(task.comments || []), newComment] 
+                  }
+                : task
+            )
+          : node.tasks,
+        children: updateInTree(node.children)
+      }));
+    };
+    return updateInTree(prev);
+  });
+
+  // تحديث المهمة المحددة
+  setSelectedTask(prev => {
+    if (prev && prev.task.id === taskId) {
+      return {
+        ...prev,
+        task: {
+          ...prev.task,
+          comments: [...(prev.task.comments || []), newComment]
+        }
+      };
+    }
+    return prev;
+  });
+
+  // إضافة حدث في التاريخ
+  addHistoryEvent(taskId, 'updated', `تم إضافة تعليق جديد: "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}"`);
+
+  console.log('تم إضافة التعليق بنجاح');
+}, [selectedTask]);
+
+
+
+const handleReassignTasks = useCallback((oldManagerId: string, newManagerId: string) => {
+  setHierarchyTree(prev => {
+    const reassignTasksInTree = (nodes: HierarchyNode[]): HierarchyNode[] => {
+      return nodes.map(node => ({
+        ...node,
+        tasks: node.tasks.map(task => 
+          (task as any).managerId === oldManagerId 
+            ? { ...task, managerId: newManagerId }
+            : task
+        ),
+        children: reassignTasksInTree(node.children)
+      }));
+    };
+    return reassignTasksInTree(prev);
+  });
+}, []);
+
+
+
+
+
   // تحويل projectConfig.startDate إلى Date object للتحليلات
   const projectStartDate = new Date(projectConfig.startDate);
 
@@ -588,6 +831,11 @@ const ProjectManager: React.FC = () => {
         onOpenViewSettings={handleOpenViewSettings}
         viewSettings={viewSettings}
         projectName={projectConfig.name}
+        selectedTask={selectedTask}
+        onOpenTaskDetails={handleOpenTaskDetails}
+
+        onOpenTaskComments={handleOpenTaskComments}
+        onOpenTaskHistory={handleOpenTaskHistory}
       />
 
       {/* Active Filters Display - only show for Gantt tab */}
@@ -626,6 +874,8 @@ const ProjectManager: React.FC = () => {
               hierarchyTree={getDisplayTree()}
               setHierarchyTree={setHierarchyTree}
               viewSettings={viewSettings}
+              onTaskSelected={handleTaskSelected}
+
             />
           ) : activeTab === 'analytics' ? (
             <ProjectAnalytics
@@ -676,6 +926,8 @@ const ProjectManager: React.FC = () => {
             onDeleteManager={(managerId) => {
               setManagers(prev => prev.filter(m => m.id !== managerId));
             }}
+            onReassignTasks={handleReassignTasks}
+
           />
         </div>
 
@@ -716,6 +968,48 @@ const ProjectManager: React.FC = () => {
                 currentFilter={activeFilters}
               />
             )}
+
+
+            {/* Task Details Sidebar */}
+            {selectedTask && (
+              <TaskDetailsSidebar
+                isVisible={showTaskDetails}
+                onClose={handleCloseTaskDetails}
+                task={selectedTask.task}
+                nodeId={selectedTask.nodeId}
+                managers={managers}
+                onUpdateTask={handleUpdateTask}
+                linkedTasks={{
+                  predecessors: [], // ستحتاج لحساب هذا من الـ links
+                  successors: []   // ستحتاج لحساب هذا من الـ links
+                }}
+              />
+            )}
+
+
+            {/* Task Comments Sidebar */}
+            {selectedTask && (
+              <TaskComments
+                isVisible={showTaskComments}
+                onClose={handleCloseTaskComments}
+                taskId={selectedTask.task.id}
+                taskName={selectedTask.task.content}
+                comments={selectedTask.task.comments || []}
+                onAddComment={handleAddComment}
+              />
+            )}
+
+            {/* Task History Sidebar */}
+            {selectedTask && (
+              <TaskHistory
+                isVisible={showTaskHistory}
+                onClose={handleCloseTaskHistory}
+                taskId={selectedTask.task.id}
+                taskName={selectedTask.task.content}
+                history={selectedTask.task.history || []}
+              />
+            )}
+
           </>
         )}
 

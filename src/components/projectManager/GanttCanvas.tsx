@@ -12,6 +12,27 @@ const COLORS = {
   ]
 };
 
+
+export interface TaskComment {
+  id: string;
+  userId: string;
+  userName: string;
+  userAvatar?: string;
+  content: string;
+  timestamp: Date;
+}
+
+export interface TaskHistoryEvent {
+  id: string;
+  eventType: 'created' | 'updated' | 'progress_changed' | 'moved' | 'assigned' | 'completed' | 'deleted';
+  description: string;
+  oldValue?: any;
+  newValue?: any;
+  userId: string;
+  userName: string;
+  timestamp: Date;
+}
+
 export interface Task {
   id: string;
   content: string;
@@ -24,6 +45,10 @@ export interface Task {
   priority?: number;
   row?: number;
   type?: 'task' | 'milestone';
+
+  comments?: TaskComment[];
+  history?: TaskHistoryEvent[];
+
 }
 
 export interface TaskLink {
@@ -99,6 +124,8 @@ interface GanttCanvasProps {
   setHierarchyTree?: React.Dispatch<React.SetStateAction<HierarchyNode[]>>;
   viewSettings?: ViewSettings; 
   
+  onTaskSelected?: (task: Task | null, nodeId?: string) => void;
+
 }
 
 export const GanttCanvas: React.FC<GanttCanvasProps> = ({
@@ -111,7 +138,8 @@ export const GanttCanvas: React.FC<GanttCanvasProps> = ({
   onGroupAdded,
   hierarchyTree: externalHierarchyTree,
   setHierarchyTree: externalSetHierarchyTree,
-  viewSettings
+  viewSettings,
+  onTaskSelected
 }) => {
 
   const [localHierarchyTree, setLocalHierarchyTree] = useState<HierarchyNode[]>([]);
@@ -141,6 +169,10 @@ export const GanttCanvas: React.FC<GanttCanvasProps> = ({
 
   
   
+  const [isDraggingView, setIsDraggingView] = useState(false);
+  const [initialMousePosition, setInitialMousePosition] = useState<{x: number, y: number} | null>(null);
+
+
 
   const [taskDragState, setTaskDragState] = useState<TaskDragState>({
     isDragging: false,
@@ -225,8 +257,8 @@ export const GanttCanvas: React.FC<GanttCanvasProps> = ({
     rowHeight: 40, // Increased for better touch targets
     taskHeight: 24,
     headerHeight: 80,
-    minZoom: 0.1,
-    maxZoom: 5,
+    minZoom: 0.3,
+    maxZoom: 1.5,
     gridColor: '#e5e7eb',
     weekendColor: '#fef3f2',
     todayColor: '#ef4444',
@@ -437,126 +469,121 @@ export const GanttCanvas: React.FC<GanttCanvasProps> = ({
       return Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1;
     }, [PROJECT_END_DATE, PROJECT_START_DATE]);
 
+    const generateData = useCallback((): HierarchyNode[] => {
+      const totalDays = 30; // مدة المشروع شهر كامل
+      const totalTasks = 1000; // عدد المهام المطلوب
+      const authors = ['Engineer A', 'Engineer B', 'Contractor C'];
 
-   const generateData = useCallback((): HierarchyNode[] => {
-    const totalDays = getTotalProjectDays();
+      const generateRandomTasks = (parentId: string, taskCount: number): Task[] => {
+        const tasks: Task[] = [];
 
-  const generateRandomTasks = (parentId: string, taskNames: string[]): Task[] => {
-    const tasks: Task[] = [];
-    const authors = ['Engineer A', 'Engineer B', 'Contractor C'];
+        for (let i = 0; i < taskCount; i++) {
+          const isMilestone = Math.random() < 0.05; // 5% Milestones فقط
+          const startDay = Math.floor(Math.random() * (totalDays - 5)) + 1;
+          const row = i;
 
-    taskNames.forEach((name, i) => {
-      const isMilestone = Math.random() < 0.2;
-      const startDay = Math.floor(Math.random() * (totalDays - 20)) + 5;
-      const row = i;
+          if (isMilestone) {
+            tasks.push({
+              id: `${parentId}-milestone-${i}`,
+              content: `Milestone ${i + 1}`,
+              startDay,
+              duration: 0,
+              color: COLORS.hierarchyColors[i % COLORS.hierarchyColors.length],
+              row,
+              type: 'milestone'
+            });
+          } else {
+            const duration = Math.floor(Math.random() * 5) + 1; // مدة قصيرة (1-5 أيام)
+            tasks.push({
+              id: `${parentId}-task-${i}`,
+              content: `Task ${i + 1}`,
+              startDay,
+              duration,
+              color: COLORS.hierarchyColors[i % COLORS.hierarchyColors.length],
+              progress: Math.floor(Math.random() * 100),
+              row,
+              author: authors[i % authors.length],
+              type: 'task'
+            });
+          }
+        }
 
-      if (isMilestone) {
-        tasks.push({
-          id: `${parentId}-milestone-${i}`,
-          content: `Milestone ${i + 1}`,
-          startDay,
-          duration: 0,
-          color: COLORS.hierarchyColors[i % COLORS.hierarchyColors.length],
-          row,
-          type: 'milestone'
-        });
-      } else {
-        const duration = Math.floor(Math.random() * 10) + 5;
-        tasks.push({
-          id: `${parentId}-task-${i}`,
-          content: `${name}`,
-          startDay,
-          duration,
-          color: COLORS.hierarchyColors[i % COLORS.hierarchyColors.length],
-          progress: Math.floor(Math.random() * 100),
-          row,
-          author: authors[i % authors.length],
-          type: 'task'
-        });
-      }
-    });
-
-    return tasks;
-  };
-
-  const generateSampleLinks = (tasks: Task[]): TaskLink[] => {
-    const links: TaskLink[] = [];
-    for (let i = 0; i < tasks.length - 1; i++) {
-      links.push({
-        id: `link-${i}`,
-        sourceTaskId: tasks[i].id,
-        targetTaskId: tasks[i + 1].id,
-        sourcePoint: 'end',
-        targetPoint: 'start',
-        color: CANVAS_CONFIG.linkColor
-      });
-    }
-    return links;
-  };
-
-  const project: HierarchyNode = {
-    id: 'project-tower-1',
-    type: 'project',
-    content: 'Civil Tower Construction',
-    level: 0,
-    isLeaf: false,
-    color: COLORS.hierarchyColors[0],
-    parent: null,
-    tasks: [],
-    links: [],
-    children: [],
-    startDate: PROJECT_START_DATE,
-    endDate: PROJECT_END_DATE
-  };
-
-  const sections = [
-    { name: 'Foundation', taskGroups: [['Excavation', 'Rebar Installation', 'Concrete Pouring']] },
-    { name: 'Structural Work', taskGroups: [['Column Casting', 'Slab Formwork', 'Concrete Pouring', 'Curing']] },
-    { name: 'Electrical & Plumbing', taskGroups: [['Electrical Wiring', 'Plumbing Pipes', 'HVAC Installation']] },
-    { name: 'Finishing', taskGroups: [['Plastering', 'Painting', 'Flooring', 'Windows & Doors']]}
-  ];
-
-  sections.forEach((sec, sIndex) => {
-    const section: HierarchyNode = {
-      id: `section-${sIndex + 1}`,
-      type: 'section',
-      content: sec.name,
-      level: 1,
-      isLeaf: false,
-      color: COLORS.hierarchyColors[(sIndex + 1) % COLORS.hierarchyColors.length],
-      parent: 'project-tower-1',
-      tasks: [],
-      links: [],
-      children: []
-    };
-
-    sec.taskGroups.forEach((group, tIndex) => {
-      const tasks = generateRandomTasks(`section-${sIndex + 1}-taskgroup-${tIndex + 1}`, group);
-      const links = generateSampleLinks(tasks);
-
-      const taskGroup: HierarchyNode = {
-        id: `section-${sIndex + 1}-taskgroup-${tIndex + 1}`,
-        type: 'task',
-        content: `Task Group ${tIndex + 1}`,
-        level: 2,
-        isLeaf: true,
-        color: COLORS.hierarchyColors[(sIndex + tIndex + 1) % COLORS.hierarchyColors.length],
-        parent: `section-${sIndex + 1}`,
-        tasks,
-        links,
-        children: [],
-        imageUrl: "/Photo.png" // يمكن تغييره لاحقاً
+        return tasks;
       };
 
-      section.children.push(taskGroup);
-    });
+      const generateSampleLinks = (tasks: Task[]): TaskLink[] => {
+        const links: TaskLink[] = [];
+        for (let i = 0; i < tasks.length - 1; i++) {
+          // ربط المهمة التالية بالتي قبلها
+          links.push({
+            id: `link-${i}`,
+            sourceTaskId: tasks[i].id,
+            targetTaskId: tasks[i + 1].id,
+            sourcePoint: 'end',
+            targetPoint: 'start',
+            color: CANVAS_CONFIG.linkColor
+          });
+        }
+        return links;
+      };
 
-    project.children.push(section);
-  });
+      const project: HierarchyNode = {
+        id: 'project-tower-1',
+        type: 'project',
+        content: 'Civil Tower Construction',
+        level: 0,
+        isLeaf: false,
+        color: COLORS.hierarchyColors[0],
+        parent: null,
+        tasks: [],
+        links: [],
+        children: [],
+        startDate: PROJECT_START_DATE,
+        endDate: PROJECT_END_DATE
+      };
 
-  return [project];
-  
-  }, [getTotalProjectDays, PROJECT_START_DATE, PROJECT_END_DATE, CANVAS_CONFIG.linkColor]);
+      // نقسم المهام على 4 أقسام × 250 مهمة تقريباً
+      const sections = ['Foundation', 'Structural Work', 'Electrical & Plumbing', 'Finishing'];
+      const tasksPerSection = Math.floor(totalTasks / sections.length);
+
+      sections.forEach((sec, sIndex) => {
+        const section: HierarchyNode = {
+          id: `section-${sIndex + 1}`,
+          type: 'section',
+          content: sec,
+          level: 1,
+          isLeaf: false,
+          color: COLORS.hierarchyColors[(sIndex + 1) % COLORS.hierarchyColors.length],
+          parent: 'project-tower-1',
+          tasks: [],
+          links: [],
+          children: []
+        };
+
+        // توليد مجموعة واحدة كبيرة داخل كل قسم
+        const tasks = generateRandomTasks(`section-${sIndex + 1}-taskgroup-1`, tasksPerSection);
+        const links = generateSampleLinks(tasks);
+
+        const taskGroup: HierarchyNode = {
+          id: `section-${sIndex + 1}-taskgroup-1`,
+          type: 'task',
+          content: `Task Group`,
+          level: 2,
+          isLeaf: true,
+          color: COLORS.hierarchyColors[(sIndex + 10) % COLORS.hierarchyColors.length],
+          parent: `section-${sIndex + 1}`,
+          tasks,
+          links,
+          children: [],
+          imageUrl: "/Photo.png"
+        };
+
+        section.children.push(taskGroup);
+        project.children.push(section);
+      });
+
+      return [project];
+    }, [PROJECT_START_DATE, PROJECT_END_DATE, CANVAS_CONFIG.linkColor]);
 
 
 
@@ -693,10 +720,17 @@ export const GanttCanvas: React.FC<GanttCanvasProps> = ({
   const calculateNodeHeight = useCallback((node: HierarchyNode): number => {
     if (node.isLeaf && node.tasks && node.tasks.length > 0) {
       const maxRow = Math.max(...node.tasks.map(t => t.row || 0));
-      return (maxRow + 2) * scaledRowHeight;
+      // تثبيت ارتفاع الصف بدون ضربه في الزوم
+      const baseRowHeight = CANVAS_CONFIG.rowHeight;
+      const totalHeight = (maxRow + 2) * baseRowHeight;
+      
+      // تطبيق تأثير الزوم بشكل محدود
+      const zoomFactor = Math.min(Math.max(viewState.zoom, 0.5), 1.5);
+      return totalHeight * zoomFactor;
     }
-    return scaledRowHeight;
-  }, [scaledRowHeight]);
+    return CANVAS_CONFIG.rowHeight * Math.min(Math.max(viewState.zoom, 0.5), 1.5);
+  }, [CANVAS_CONFIG.rowHeight, viewState.zoom]);
+
 
 
   
@@ -734,10 +768,15 @@ export const GanttCanvas: React.FC<GanttCanvasProps> = ({
 
   const getTaskConnectionPoints = useCallback((task: Task, node: HierarchyNode) => {
   const effectiveLeftPanelWidth = getEffectiveLeftPanelWidth();
+
+  const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1; // 1/5 = 0.2
+  const displayStartDay = task.startDay * scaleFactor;
+  const displayDuration = task.duration * scaleFactor;
+
   const baseY = (node.yPosition || 0) + CANVAS_CONFIG.taskPadding + (task.row || 0) * (scaledTaskHeight + CANVAS_CONFIG.taskPadding);
   
   if (task.type === 'milestone') {
-    const taskX = effectiveLeftPanelWidth + viewState.offsetX + task.startDay * scaledDayWidth;
+    const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
     const taskY = baseY + scaledTaskHeight / 2;
     const size = CANVAS_CONFIG.milestoneSize * viewState.zoom;
 
@@ -746,8 +785,8 @@ export const GanttCanvas: React.FC<GanttCanvasProps> = ({
       end: { x: taskX + size / 2, y: taskY }
     };
   } else {
-    const taskX = effectiveLeftPanelWidth + viewState.offsetX + task.startDay * scaledDayWidth;
-    const taskWidth = task.duration * scaledDayWidth;
+    const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
+    const taskWidth = displayDuration * scaledDayWidth;
     const taskY = baseY + scaledTaskHeight / 2;
 
     return {
@@ -755,7 +794,7 @@ export const GanttCanvas: React.FC<GanttCanvasProps> = ({
       end: { x: taskX + taskWidth, y: taskY }
     };
   }
-}, [CANVAS_CONFIG, scaledDayWidth, scaledTaskHeight, viewState.offsetX, getEffectiveLeftPanelWidth]);
+}, [CANVAS_CONFIG, scaledDayWidth, scaledTaskHeight, viewState.offsetX, getEffectiveLeftPanelWidth, timeAxisMode, viewState.zoom]);
 
 
   // Add new ref for delete buttons hit areas
@@ -967,7 +1006,10 @@ const calculateAdjustedDuration = (startDay: number, originalDuration: number, t
           }
       }
       
-      const day = Math.floor((dropX - effectiveLeftPanelWidth - viewState.offsetX) / scaledDayWidth);
+      let day = Math.floor((dropX - effectiveLeftPanelWidth - viewState.offsetX) / scaledDayWidth);
+      if (timeAxisMode === 'weeks') {
+        day *= 5;
+      }
       
       let startDay = findNextWorkDay(day, getTotalProjectDays());
 
@@ -1010,7 +1052,7 @@ const calculateAdjustedDuration = (startDay: number, originalDuration: number, t
       });
       
       console.log('✅ تمت إضافة المهمة:', finalTask.content, 'إلى:', targetNode?.content);
-  }, [hierarchyTree, flattenTree, scaledDayWidth, scaledTaskHeight, CANVAS_CONFIG, viewState, getTotalProjectDays,getEffectiveLeftPanelWidth]);
+  }, [hierarchyTree, flattenTree, scaledDayWidth, scaledTaskHeight, CANVAS_CONFIG, viewState, getTotalProjectDays,getEffectiveLeftPanelWidth, timeAxisMode]);
 
   // 3. أضف دالة حذف المهام المحددة:
   const deleteSelectedTasks = useCallback(() => {
@@ -1371,10 +1413,15 @@ const drawCanvas = useCallback(() => {
   // ★ استخدام الدالة المركزية هنا
   const effectiveLeftPanelWidth = getEffectiveLeftPanelWidth();
 
-  const startDay = Math.floor(-viewState.offsetX / scaledDayWidth);
-  const endDay = Math.ceil((rect.width - effectiveLeftPanelWidth - viewState.offsetX) / scaledDayWidth);
-  const visibleStartDay = Math.max(0, startDay);
-  const visibleEndDay = Math.min(totalDays, endDay);
+  let startDay = Math.floor(-viewState.offsetX / scaledDayWidth);
+  let endDay = Math.ceil((rect.width - effectiveLeftPanelWidth - viewState.offsetX) / scaledDayWidth);
+  let visibleStartDay = Math.max(0, startDay);
+  let visibleEndDay = Math.min(totalDays, endDay);
+
+  if (timeAxisMode === 'weeks') {
+    visibleStartDay = Math.floor(visibleStartDay / 5) * 5;
+    visibleEndDay = Math.ceil(visibleEndDay / 5) * 5;
+  }
 
   const projectStartX = effectiveLeftPanelWidth + viewState.offsetX;
   const projectEndX = effectiveLeftPanelWidth + viewState.offsetX + totalDays * scaledDayWidth;
@@ -1450,7 +1497,7 @@ const drawCanvas = useCallback(() => {
   }
 
     // تمييز عطل الأسبوع (إذا كانت مفعلة)
-    if (showWeekends && firstTaskNode) {
+    if (showWeekends && firstTaskNode && timeAxisMode === 'days') {
     ctx.save();
     for (let day = visibleStartDay; day <= visibleEndDay; day++) {
       const date = dayToDate(day);
@@ -1524,7 +1571,11 @@ const drawCanvas = useCallback(() => {
             displayTask = taskDragState.task;
           }
 
-          const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayTask.startDay * scaledDayWidth;
+          const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1;
+          const displayStartDay = displayTask.startDay * scaleFactor;
+          const displayDuration = displayTask.duration * scaleFactor;
+
+          const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
           const taskY = nodeY + CANVAS_CONFIG.taskPadding + (displayTask.row || 0) * (scaledTaskHeight + CANVAS_CONFIG.taskPadding);
 
           // التحقق مما إذا كانت المهمة محددة
@@ -1608,7 +1659,7 @@ const drawCanvas = useCallback(() => {
               ctx.font = `600 ${Math.max(8, 9 * viewState.zoom)}px Inter, sans-serif`;
               ctx.textAlign = 'center';
 
-              const textMetrics = ctx.measureText(dateText);
+              const textMetrics: TextMetrics = ctx.measureText(dateText);
               const textWidth = textMetrics.width;
               const textHeight = 14 * viewState.zoom;
               const timestampY = milestoneY + size / 2 + 20;
@@ -1630,7 +1681,7 @@ const drawCanvas = useCallback(() => {
               ctx.font = `600 ${Math.max(7, 8 * viewState.zoom)}px Inter, sans-serif`;
               ctx.textAlign = 'center';
 
-              const textMetrics = ctx.measureText(idText);
+              const textMetrics: TextMetrics = ctx.measureText(idText);
               const textWidth = textMetrics.width;
               const textHeight = 12 * viewState.zoom;
               const idY = milestoneY - size / 2 - 15;
@@ -1664,7 +1715,7 @@ const drawCanvas = useCallback(() => {
 
           // رسم المهام العادية
           else if (displayTask.type !== 'milestone' || !showMilestones) {
-            const taskWidth = displayTask.duration * scaledDayWidth;
+            const taskWidth = displayDuration * scaledDayWidth;
 
             if (taskX + taskWidth >= effectiveLeftPanelWidth && taskX <= rect.width) {
               const isBeingDragged = taskDragState.isDragging && taskDragState.task?.id === displayTask.id;
@@ -1731,7 +1782,8 @@ const drawCanvas = useCallback(() => {
 
                 let displayText = displayTask.content;
                 const maxTextWidth = taskWidth - 10;
-                const textWidth = ctx.measureText(displayText).width;
+                const textMetrics: TextMetrics = ctx.measureText(displayText);
+                const textWidth = textMetrics.width;
 
                 if (textWidth > maxTextWidth && maxTextWidth > 20) {
                   const ratio = maxTextWidth / textWidth;
@@ -1802,7 +1854,11 @@ const drawCanvas = useCallback(() => {
             ctx.lineWidth = 2;
             ctx.setLineDash([]);
 
-            const currentTaskX = effectiveLeftPanelWidth + viewState.offsetX + displayTask.startDay * scaledDayWidth;
+            const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1;
+            const displayStartDay = displayTask.startDay * scaleFactor;
+            const displayDuration = displayTask.duration * scaleFactor;
+
+            const currentTaskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
             const currentTaskY = nodeY + CANVAS_CONFIG.taskPadding + (displayTask.row || 0) * (scaledTaskHeight + CANVAS_CONFIG.taskPadding);
 
             if (displayTask.type === 'milestone') {
@@ -1814,7 +1870,7 @@ const drawCanvas = useCallback(() => {
               ctx.arc(currentTaskX, milestoneY, (size / 2) + 2, 0, Math.PI * 2);
               ctx.stroke();
             } else {
-              const currentTaskWidth = displayTask.duration * scaledDayWidth;
+              const currentTaskWidth = displayDuration * scaledDayWidth;
 
               ctx.beginPath();
               ctx.roundRect(
@@ -1907,7 +1963,7 @@ const drawCanvas = useCallback(() => {
     timeAxisMode,
     drawEnhancedTimeAxis,
     drawSidebar,
-    imageTick
+    imageTick,
   ]);
 
     // دالة رسم أزرار التحكم بالمحور الزمني
@@ -2137,24 +2193,24 @@ const moveNodeDown = useCallback((nodeId: string) => {
     // دالة رسم محور الأسابيع
     const drawWeeksAxis = useCallback((ctx: CanvasRenderingContext2D, rect: DOMRect, visibleStartDay: number, visibleEndDay: number, effectiveLeftPanelWidth: number) => {
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        const weekWidth = scaledDayWidth * 7; // عرض الأسبوع
+        const weekWidth = scaledDayWidth * 5; // عرض الأسبوع
         
         // حساب الأسبوع الأول والأخير المرئيين
-        const firstWeekStart = Math.floor(visibleStartDay / 7) * 7;
-        const lastWeekStart = Math.floor(visibleEndDay / 7) * 7;
+        const firstWeekStart = Math.floor(visibleStartDay / 5) * 5;
+        const lastWeekStart = Math.floor(visibleEndDay / 5) * 5;
         
-        for (let weekStart = firstWeekStart; weekStart <= lastWeekStart; weekStart += 7) {
+        for (let weekStart = firstWeekStart; weekStart <= lastWeekStart; weekStart += 5) {
             const x = effectiveLeftPanelWidth + viewState.offsetX + weekStart * scaledDayWidth;
             if (x + weekWidth >= effectiveLeftPanelWidth && x <= rect.width) {
                 const startDate = dayToDate(weekStart);
-                const endDate = dayToDate(weekStart + 6);
+                const endDate = dayToDate(weekStart + 4);
                 
                 // خلفية الأسبوع
                 ctx.fillStyle = weekStart % 14 === 0 ? 'rgba(248, 250, 252, 0.8)' : 'rgba(241, 245, 249, 0.5)';
                 ctx.fillRect(x, 0, weekWidth, CANVAS_CONFIG.headerHeight);
                 
                 // رقم الأسبوع
-                const weekNumber = Math.floor(weekStart / 7) + 1;
+                const weekNumber = Math.floor(weekStart / 5) + 1;
                 ctx.fillStyle = '#374151';
                 ctx.font = '600 12px "Segoe UI", "Arial", sans-serif';
                 ctx.textAlign = 'center';
@@ -2188,7 +2244,7 @@ const moveNodeDown = useCallback((nodeId: string) => {
         }
     }, [CANVAS_CONFIG, dayToDate, scaledDayWidth, viewState.offsetX]);
 
-      // إضافة دالة للحصول على مستويات التفصيل حسب الزوم
+  // إضافة دالة للحصول على مستويات التفصيل حسب الزوم
   const getDetailLevel = useCallback((zoom: number) => {
     if (zoom >= 2.0) return 'minimal';      // زوم كبير جداً - إخفاء معظم التفاصيل
     if (zoom >= 1.5) return 'basic';        // زوم كبير - إخفاء الصور والتفاصيل الثانوية
@@ -2198,7 +2254,7 @@ const moveNodeDown = useCallback((nodeId: string) => {
   }, []);
 
   
-  // رسم أزرار التحكم في وضع التحرير
+  // دالة رسم أزرار التحكم في وضع التحرير
   const drawEditControls = useCallback((ctx: CanvasRenderingContext2D, node: HierarchyNode, centerY: number) => {
   const detailLevel = getDetailLevel(viewState.zoom);
   
@@ -2411,7 +2467,8 @@ const moveNodeDown = useCallback((nodeId: string) => {
 
     // ✏️ النص - تقصير أكثر في الزوم الكبير
     let displayText = node.content;
-    const textWidth = ctx.measureText(displayText).width;
+    const textMetrics: TextMetrics = ctx.measureText(displayText);
+    const textWidth = textMetrics.width;
     
     if (textWidth > maxTextWidth) {
       const ratio = maxTextWidth / textWidth;
@@ -2719,6 +2776,8 @@ const moveNodeDown = useCallback((nodeId: string) => {
   // ★ استخدام العرض الفعلي الصحيح
   const effectiveLeftPanelWidth = getEffectiveLeftPanelWidth();
   
+
+  
   // إذا كان النقر في منطقة المهام (وليس في الشريط الجانبي)
   if (mouseX >= effectiveLeftPanelWidth) {
     
@@ -2733,7 +2792,11 @@ const moveNodeDown = useCallback((nodeId: string) => {
       const nodeY = node.yPosition;
       
       for (const task of node.tasks) {
-        const taskX = effectiveLeftPanelWidth + viewState.offsetX + task.startDay * scaledDayWidth;
+        const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1;
+        const displayStartDay = task.startDay * scaleFactor;
+        const displayDuration = task.duration * scaleFactor;
+
+        const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
         const taskY = nodeY + CANVAS_CONFIG.taskPadding + (task.row || 0) * (scaledTaskHeight + CANVAS_CONFIG.taskPadding);
         
         if (task.type === 'milestone') {
@@ -2749,7 +2812,7 @@ const moveNodeDown = useCallback((nodeId: string) => {
             break;
           }
         } else {
-          const taskWidth = task.duration * scaledDayWidth;
+          const taskWidth = displayDuration * scaledDayWidth;
           
           if (mouseX >= taskX && mouseX <= taskX + taskWidth && 
               mouseY >= taskY && mouseY <= taskY + scaledTaskHeight) {
@@ -2792,6 +2855,10 @@ const moveNodeDown = useCallback((nodeId: string) => {
       }
     } else if (clickedTask && clickedNode && !isLinkMode) {
       
+      if (onTaskSelected) {
+        onTaskSelected(clickedTask, clickedNode.id);
+      }
+      
       // التحديد المتعدد مع Ctrl
       if (isCtrlPressed) {
         const taskKey = clickedTask.id;
@@ -2821,7 +2888,10 @@ const moveNodeDown = useCallback((nodeId: string) => {
       }
 
       // وضع سحب المهام
-      const taskX = effectiveLeftPanelWidth + viewState.offsetX + clickedTask.startDay * scaledDayWidth;
+      const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1;
+      const displayStartDay = clickedTask.startDay * scaleFactor;
+
+      const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
       const taskY = clickedNode.yPosition! + CANVAS_CONFIG.taskPadding + (clickedTask.row || 0) * (scaledTaskHeight + CANVAS_CONFIG.taskPadding);
       
       let dragType: 'move' | 'resize-left' | 'resize-right' = 'move';
@@ -2841,7 +2911,8 @@ const moveNodeDown = useCallback((nodeId: string) => {
           dragType = 'move';
         }
       } else {
-        const taskWidth = clickedTask.duration * scaledDayWidth;
+        const displayDuration = clickedTask.duration * scaleFactor;
+        const taskWidth = displayDuration * scaledDayWidth;
         const resizeZone = Math.min(20, taskWidth * 0.2);
         if (mouseX - taskX < resizeZone) {
           dragType = 'resize-left';
@@ -2862,33 +2933,44 @@ const moveNodeDown = useCallback((nodeId: string) => {
 
       canvas.style.cursor = dragType === 'move' ? 'grabbing' : 'col-resize';
     } else {
-      // النقر في منطقة فارغة
-      if (!isCtrlPressed && !isShiftPressed && !viewState.isDragging) {
-        setSelectedTasks(new Map());
+        
+        // حفظ موقع الماوس الأولي
+        setInitialMousePosition({ x: mouseX, y: mouseY });
+        
+        // if (!isCtrlPressed && !isShiftPressed) {
+        //   setSelectedTasks(new Map());
+        // }
+        
+        if (linkState.isCreating) {
+          setLinkState({
+            isCreating: false,
+            sourceTask: null,
+            sourcePoint: null,
+            mouseX: 0,
+            mouseY: 0
+          });
+        } else {
+          // بدء السحب بدون إلغاء تحديد المهمة
+          setViewState(prev => ({
+            ...prev,
+            isDragging: true
+          }));
+          setIsDraggingView(false); // لم نتحرك بعد
+          canvas.style.cursor = 'grabbing';
+        }
       }
-      
-      if (linkState.isCreating) {
-        setLinkState({
-          isCreating: false,
-          sourceTask: null,
-          sourcePoint: null,
-          mouseX: 0,
-          mouseY: 0
-        });
-      } else {
-        setViewState(prev => ({
-          ...prev,
-          isDragging: true
-        }));
-        canvas.style.cursor = 'grabbing';
-      }
-    }
-    
+          
     return;
   }
 
   // معالجة النقرات في الشريط الجانبي (إذا لم يكن مطوي)
   if (!sidebarCollapsed && mouseY >= CANVAS_CONFIG.headerHeight) {
+
+    // إلغاء تحديد المهمة عند النقر في الشريط الجانبي
+    if (onTaskSelected) {
+      onTaskSelected(null);
+    }
+    
     const flattened = flattenTree(hierarchyTree);
     
     for (const node of flattened) {
@@ -2954,7 +3036,8 @@ const moveNodeDown = useCallback((nodeId: string) => {
   showLinks,
   selectedTasks,
   setSelectedTasks,
-  scaledRowHeight
+  scaledRowHeight,
+  timeAxisMode
 ]);
 
 
@@ -2968,6 +3051,19 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
   const mouseY = e.clientY - rect.top;
   const effectiveLeftPanelWidth = getEffectiveLeftPanelWidth(); // ★ استخدام الدالة المركزية
 
+    // تتبع إذا كان المستخدم يسحب الشبكة فعلاً
+    if (viewState.isDragging && initialMousePosition) {
+      const dragDistance = Math.sqrt(
+        Math.pow(mouseX - initialMousePosition.x, 2) + 
+        Math.pow(mouseY - initialMousePosition.y, 2)
+      );
+      
+      // إذا تحرك المؤشر أكثر من 5 بكسل، نعتبرها عملية سحب
+      if (dragDistance > 5 && !isDraggingView) {
+        setIsDraggingView(true);
+      }
+    }
+    
     // فحص hover على أزرار المحور الزمني
     if (!sidebarCollapsed && mouseY < CANVAS_CONFIG.headerHeight) {
       const buttonWidth = 35;
@@ -3003,7 +3099,11 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
         if (!node.isLeaf || !node.tasks || !node.yPosition) continue;
         
         for (const task of node.tasks) {
-          const taskX = effectiveLeftPanelWidth + viewState.offsetX + task.startDay * scaledDayWidth;
+          const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1;
+          const displayStartDay = task.startDay * scaleFactor;
+          const displayDuration = task.duration * scaleFactor;
+
+          const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
           const taskY = node.yPosition + CANVAS_CONFIG.taskPadding + (task.row || 0) * (scaledTaskHeight + CANVAS_CONFIG.taskPadding);
           
           // فحص المعالم والمهام العادية
@@ -3015,7 +3115,7 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
             const dy = Math.abs(mouseY - milestoneY);
             isHovering = (dx / (size / 2) + dy / (size / 2)) <= 1;
           } else {
-            const taskWidth = task.duration * scaledDayWidth;
+            const taskWidth = displayDuration * scaledDayWidth;
             isHovering = mouseX >= taskX && mouseX <= taskX + taskWidth && 
                         mouseY >= taskY && mouseY <= taskY + scaledTaskHeight;
           }
@@ -3066,7 +3166,8 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
         const deltaX = mouseX - taskDragState.startMouseX;
         const deltaY = mouseY - taskDragState.startMouseY;
         
-        const daysDelta = deltaX / scaledDayWidth;
+        const scaleFactor = timeAxisMode === 'weeks' ? 5 : 1;
+        const daysDelta = (deltaX / scaledDayWidth) * scaleFactor;
         const rowsDelta = deltaY / (scaledTaskHeight + CANVAS_CONFIG.taskPadding);
 
         let newTask = { ...taskDragState.originalTask };
@@ -3121,6 +3222,17 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
         offsetX: prev.offsetX + e.movementX,
         offsetY: prev.offsetY + e.movementY
       }));
+      
+      // تأكيد أن هذا سحب وليس نقر
+      if (initialMousePosition) {
+        const dragDistance = Math.sqrt(
+          Math.pow(mouseX - initialMousePosition.x, 2) + 
+          Math.pow(mouseY - initialMousePosition.y, 2)
+        );
+        if (dragDistance > 5) {
+          setIsDraggingView(true);
+        }
+      }
     } else {
       // تحديث نوع المؤشر
       canvas.style.cursor = 'default';
@@ -3137,7 +3249,11 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
       if (!node.isLeaf || !node.tasks || !node.yPosition) continue;
       
       for (const task of node.tasks) {
-        const taskX = effectiveLeftPanelWidth + viewState.offsetX + task.startDay * scaledDayWidth;
+        const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1;
+        const displayStartDay = task.startDay * scaleFactor;
+        const displayDuration = task.duration * scaleFactor;
+
+        const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
         const taskY = node.yPosition + CANVAS_CONFIG.taskPadding + (task.row || 0) * (scaledTaskHeight + CANVAS_CONFIG.taskPadding);
         
         if (task.type === 'milestone') {
@@ -3159,7 +3275,7 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
             return;
           }
         } else {
-              const taskWidth = task.duration * scaledDayWidth;
+              const taskWidth = displayDuration * scaledDayWidth;
               
               if (mouseX >= taskX && mouseX <= taskX + taskWidth && 
                   mouseY >= taskY && mouseY <= taskY + scaledTaskHeight) {
@@ -3192,11 +3308,14 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
     sidebarCollapsed,
     getTotalProjectDays,
     getEffectiveLeftPanelWidth,
-    treeEditMode,      // جديد
-    editingNodeId,     // جديد
-    draggedNodeId,     // جديد
-    dragOverNodeId,    // جديد
-    dropPosition       // جديد
+    treeEditMode,   
+    editingNodeId,   
+    draggedNodeId,    
+    dragOverNodeId,    
+    dropPosition,       
+    timeAxisMode,
+    initialMousePosition,
+  isDraggingView
   ]);
 
 
@@ -3298,6 +3417,31 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
     });
   }
 
+  // معالجة انتهاء سحب الشبكة
+  if (viewState.isDragging) {
+    // إذا لم يكن هناك سحب فعلي (نقر بسيط)، ألغي تحديد المهمة
+    if (!isDraggingView && onTaskSelected) {
+        // إلغاء تحديد الأزرار
+        if (onTaskSelected) {
+          onTaskSelected(null);
+        }
+        
+        // إلغاء تحديد المهام والشفافية
+        setSelectedTasks(new Map());
+        
+    }
+
+  
+    setViewState(prev => ({
+      ...prev,
+      isDragging: false
+    }));
+  }
+
+    // إعادة تعيين متغيرات السحب
+  setIsDraggingView(false);
+  setInitialMousePosition(null);
+
   setTaskDragState({
     isDragging: false,
     task: null,
@@ -3308,13 +3452,9 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
     nodeId: undefined
   });
 
-  setViewState(prev => ({
-    ...prev,
-    isDragging: false
-  }));
 
   canvas.style.cursor = 'default';
-}, [taskDragState, getTotalProjectDays, findNextWorkDay, isWeekend]);
+}, [taskDragState, getTotalProjectDays, findNextWorkDay, isWeekend , selectedTasks]);
 
   const handleCanvasDoubleClick = useCallback((e: React.MouseEvent) => {
   e.preventDefault();
@@ -3339,7 +3479,11 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
     const nodeY = node.yPosition;
     
     for (const task of node.tasks) {
-      const taskX = effectiveLeftPanelWidth + viewState.offsetX + task.startDay * scaledDayWidth;
+      const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1;
+      const displayStartDay = task.startDay * scaleFactor;
+      const displayDuration = task.duration * scaleFactor;
+
+      const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
       const taskY = nodeY + CANVAS_CONFIG.taskPadding + (task.row || 0) * (scaledTaskHeight + CANVAS_CONFIG.taskPadding);
       
       if (task.type === 'milestone') {
@@ -3354,7 +3498,7 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
           break;
         }
       } else {
-        const taskWidth = task.duration * scaledDayWidth;
+        const taskWidth = displayDuration * scaledDayWidth;
         
         if (mouseX >= taskX && mouseX <= taskX + taskWidth && 
             mouseY >= taskY && mouseY <= taskY + scaledTaskHeight) {
@@ -3376,7 +3520,7 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
     });
   }
 
-}, [hierarchyTree, viewState, scaledDayWidth, scaledTaskHeight, CANVAS_CONFIG, flattenTree, sidebarCollapsed]);
+}, [hierarchyTree, viewState, scaledDayWidth, scaledTaskHeight, CANVAS_CONFIG, flattenTree, sidebarCollapsed, timeAxisMode]);
 
   // أضف معالج النقر بالزر الأيمن:
   const handleCanvasContextMenu = useCallback((e: React.MouseEvent) => {
@@ -3396,7 +3540,11 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
       if (!node.isLeaf || !node.tasks || !node.yPosition || !node.height) continue;
       
       for (const task of node.tasks) {
-        const taskX = effectiveLeftPanelWidth + viewState.offsetX + task.startDay * scaledDayWidth;
+        const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1;
+        const displayStartDay = task.startDay * scaleFactor;
+        const displayDuration = task.duration * scaleFactor;
+
+        const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
         const taskY = node.yPosition + CANVAS_CONFIG.taskPadding + (task.row || 0) * (scaledTaskHeight + CANVAS_CONFIG.taskPadding);
         
         if (task.type === 'milestone') {
@@ -3416,7 +3564,7 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
             return;
           }
         } else {
-          const taskWidth = task.duration * scaledDayWidth;
+          const taskWidth = displayDuration * scaledDayWidth;
           
           if (mouseX >= taskX && mouseX <= taskX + taskWidth && 
               mouseY >= taskY && mouseY <= taskY + scaledTaskHeight) {
@@ -3432,7 +3580,7 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
         }
       }
     }
-  }, [hierarchyTree, viewState, scaledDayWidth, scaledTaskHeight, CANVAS_CONFIG, flattenTree, sidebarCollapsed]);
+  }, [hierarchyTree, viewState, scaledDayWidth, scaledTaskHeight, CANVAS_CONFIG, flattenTree, sidebarCollapsed, timeAxisMode]);
 
 
 
@@ -3503,7 +3651,10 @@ const applyTemplateToNode = useCallback((template: any, dropX: number, dropY: nu
   }
   
   // حساب نقطة البداية من موقع الإفلات
-  const day = Math.floor((dropX - effectiveLeftPanelWidth - viewState.offsetX) / scaledDayWidth);
+  let day = Math.floor((dropX - effectiveLeftPanelWidth - viewState.offsetX) / scaledDayWidth);
+  if (timeAxisMode === 'weeks') {
+    day *= 5;
+  }
   let startDay = findNextWorkDay(day, getTotalProjectDays());
   
   // إنشاء المهام الجديدة من القالب
@@ -3578,7 +3729,7 @@ const applyTemplateToNode = useCallback((template: any, dropX: number, dropY: nu
   });
   
   console.log(`تم تطبيق القالب "${template.name}" مع ${newTasks.length} مهمة و ${newLinks.length} رابط`);
-}, [hierarchyTree, flattenTree, scaledDayWidth, scaledTaskHeight, CANVAS_CONFIG, viewState, getTotalProjectDays, getEffectiveLeftPanelWidth, searchQuery, filteredTree, findNextWorkDay, calculateAdjustedDuration]);
+}, [hierarchyTree, flattenTree, scaledDayWidth, scaledTaskHeight, CANVAS_CONFIG, viewState, getTotalProjectDays, getEffectiveLeftPanelWidth, searchQuery, filteredTree, findNextWorkDay, calculateAdjustedDuration, timeAxisMode]);
 
 
 
@@ -3625,6 +3776,12 @@ const applyTemplateToNode = useCallback((template: any, dropX: number, dropY: nu
     if (e.key === 'Escape') {
       setSelectedTasks(new Map());
       setContextMenu(null);
+
+
+      // إلغاء تحديد المهمة الحالية
+      if (onTaskSelected) {
+        onTaskSelected(null);
+      }
       console.log('تم إلغاء التحديد');
     }
   };

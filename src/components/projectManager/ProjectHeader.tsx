@@ -25,11 +25,17 @@ import {
   ListTodo,
   PanelsTopLeft,
   Box,
-  Package
+  Package,
+  Info,
+  Edit,
+  Trash2,
+  MessageCircle,
+  Clock
 } from 'lucide-react';
 import { FilterCriteria } from './filter/FilterModal';
 import { hasActiveFilters } from './filter/FilterUtils';
 import { ViewSettings } from './ViewSettingsModal';
+import { Task } from './GanttCanvas';
 
 interface ViewState {
   zoom: number;
@@ -37,6 +43,13 @@ interface ViewState {
   offsetY: number;
   isDragging: boolean;
 }
+
+interface SelectedTaskInfo {
+  task: Task;
+  nodeId: string;
+}
+
+
 
 export type ActiveTab = 'gantt' | 'settings' | 'templates' | 'analytics';
 
@@ -78,6 +91,11 @@ interface ProjectHeaderProps {
   leftSidebarVisible?: boolean;
   onToggleLeftSidebar?: () => void;
 
+  selectedTask?: SelectedTaskInfo | null;
+  onOpenTaskDetails?: () => void;
+
+  onOpenTaskComments?: () => void;
+  onOpenTaskHistory?: () => void;  
 }
 
 export const ProjectHeader: React.FC<ProjectHeaderProps> = ({ 
@@ -101,7 +119,10 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
   projectName = "AVAMENT",
   leftSidebarVisible = false,
   onToggleLeftSidebar,
-
+  selectedTask,
+  onOpenTaskDetails,
+  onOpenTaskComments,
+  onOpenTaskHistory
 
 }) => {
 
@@ -118,7 +139,7 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
   };
 
   return (
-    <div className="bg-white shadow-sm border-b border-gray-200 px-4 py-2 h-14">
+    <div className="bg-white shadow-sm border-b border-gray-200 px-4 py-2 h-14 relative">
       <div className="flex items-center justify-between h-full">
         <div className="flex items-center space-x-3">
           <button
@@ -182,6 +203,54 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
           {/* Gantt-specific controls - only show when activeTab is 'gantt' */}
           {activeTab === 'gantt' && (
             <>
+
+              {selectedTask && (
+                <div className="absolute left-1/2 transform -translate-x-1/2 flex items-center bg-white shadow-lg border border-gray-200 rounded-lg px-2 py-1.5">
+                  {/* مؤشر المهمة */}
+                  <div className="flex items-center space-x-2 px-2">
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: selectedTask.task.color }}></div>
+                    <span className="text-xs font-medium text-gray-700 max-w-32 truncate">
+                      {selectedTask.task.content}
+                    </span>
+                  </div>
+                  
+                  {/* خط فاصل */}
+                  <div className="h-4 w-px bg-gray-200 mx-2"></div>
+                  
+                  {/* الأزرار */}
+                  <div className="flex items-center space-x-1">
+                    <button
+                      onClick={onOpenTaskDetails}
+                      className="p-1.5 rounded-md text-blue-600 hover:bg-blue-50 transition-colors"
+                      title="تفاصيل المهمة"
+                    >
+                      <Info size={14} />
+                    </button>
+                    
+
+                    <button
+                      onClick={onOpenTaskComments} // جديد
+                      className="p-2 rounded-md text-green-600 hover:bg-green-50 transition-colors"
+                      title="تعليقات المهمة"
+                    >
+                      <MessageCircle size={16} />
+                    </button>
+                    
+                    <button
+                      onClick={onOpenTaskHistory} // جديد
+                      className="p-2 rounded-md text-purple-600 hover:bg-purple-50 transition-colors"
+                      title="تاريخ المهمة"
+                    >
+                      <Clock size={16} />
+                    </button>
+
+                    
+                  </div>
+                </div>
+              )}
+
+            <div className="flex items-center space-x-2">
+
               {/* الفلاتر */}
               <div className="flex items-center space-x-2">
                 {hasActiveFilters(activeFilters || {}) && (
@@ -266,6 +335,9 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
                   </button>
                 </div>
               )}
+
+            </div>
+
             </>
           )}
 
