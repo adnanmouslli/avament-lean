@@ -1,7 +1,10 @@
 import React, { useState, useCallback } from 'react';
 import { 
   X, Plus, Trash2, Edit2, ChevronRight, ChevronDown,
-  FolderPlus, Save, Building2, AlertTriangle
+  FolderPlus, Save, Building2, AlertTriangle,
+  ArrowUp, ArrowDown,
+  ArrowDownCircle,
+  ArrowUpCircle
 } from 'lucide-react';
 import { HierarchyNode } from './GanttCanvas';
 
@@ -79,6 +82,16 @@ const DeleteConfirmationModal: React.FC<{
   );
 };
 
+const deepClone = (obj: any): any => {
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(deepClone);
+  const clone = {};
+  for (const key in obj) {
+    clone[key] = deepClone(obj[key]);
+  }
+  return clone;
+};
+
 export const TreeEditorModal: React.FC<TreeEditorModalProps> = ({
   isOpen,
   onClose,
@@ -94,6 +107,7 @@ export const TreeEditorModal: React.FC<TreeEditorModalProps> = ({
   const [editContent, setEditContent] = useState('');
   const [newSectionName, setNewSectionName] = useState('');
   const [showAddSection, setShowAddSection] = useState<string | null>(null);
+  const [addPosition, setAddPosition] = useState<'above' | 'below' | 'child' | null>(null);
 
   const [deleteConfirmation, setDeleteConfirmation] = useState<{
     isOpen: boolean;
@@ -133,14 +147,57 @@ export const TreeEditorModal: React.FC<TreeEditorModalProps> = ({
     setEditContent('');
   }, []);
 
-  const handleAddSection = useCallback((parentId: string) => {
+  const findNodePath = useCallback((tree: HierarchyNode[], nodeId: string, path: number[] = []): { parent: HierarchyNode[] | null, index: number } | null => {
+    for (let i = 0; i < tree.length; i++) {
+      if (tree[i].id === nodeId) {
+        return { parent: null, index: i };
+      }
+      const found = findNodePath(tree[i].children, nodeId, [...path, i]);
+      if (found) {
+        if (found.parent === null) {
+          found.parent = tree[i].children;
+        }
+        return found;
+      }
+    }
+    return null;
+  }, []);
+
+  const findNodeById = useCallback((tree: HierarchyNode[], nodeId: string): HierarchyNode | null => {
+    for (const node of tree) {
+      if (node.id === nodeId) return node;
+      const found = findNodeById(node.children, nodeId);
+      if (found) return found;
+    }
+    return null;
+  }, []);
+
+  const handleAddSection = useCallback((parentId: string, nodeId: string | null, position: 'above' | 'below' | 'child') => {
     if (newSectionName.trim()) {
-      onAddSection(parentId, newSectionName.trim());
+      const newTree = deepClone(hierarchyTree) as HierarchyNode[];
+      const pathInfo = nodeId ? findNodePath(newTree, nodeId) : { parent: null, index: -1 };
+      
+      if (parentId === 'root') {
+        const newNode = onAddSection(parentId, newSectionName.trim());
+        newTree.splice(position === 'above' ? 0 : newTree.length, 0, newNode);
+      } else if (position === 'child') {
+        const parentNode = findNodeById(newTree, parentId);
+        if (parentNode) {
+          const newNode = onAddSection(parentId, newSectionName.trim());
+          parentNode.children.push(newNode);
+        }
+      } else if (pathInfo && pathInfo.parent) {
+        const newNode = onAddSection(parentId, newSectionName.trim());
+        pathInfo.parent.splice(position === 'above' ? pathInfo.index : pathInfo.index + 1, 0, newNode);
+      }
+      
+      onUpdateTree(newTree);
       setNewSectionName('');
       setShowAddSection(null);
+      setAddPosition(null);
       setExpandedNodes(prev => new Set([...prev, parentId]));
     }
-  }, [newSectionName, onAddSection]);
+  }, [newSectionName, onAddSection, hierarchyTree, onUpdateTree, findNodePath, findNodeById]);
 
   const handleDeleteClick = useCallback((node: HierarchyNode) => {
     const nodeType = node.type === 'section' ? 'القسم' : 'العنصر';
@@ -171,13 +228,34 @@ export const TreeEditorModal: React.FC<TreeEditorModalProps> = ({
     });
   }, []);
 
+  const handleMoveUp = useCallback((nodeId: string) => {
+    const newTree = deepClone(hierarchyTree) as HierarchyNode[];
+    const pathInfo = findNodePath(newTree, nodeId);
+    if (!pathInfo || !pathInfo.parent || pathInfo.index === 0) return;
+
+    const temp = pathInfo.parent[pathInfo.index - 1];
+    pathInfo.parent[pathInfo.index - 1] = pathInfo.parent[pathInfo.index];
+    pathInfo.parent[pathInfo.index] = temp;
+    onUpdateTree(newTree);
+  }, [hierarchyTree, onUpdateTree, findNodePath]);
+
+  const handleMoveDown = useCallback((nodeId: string) => {
+    const newTree = deepClone(hierarchyTree) as HierarchyNode[];
+    const pathInfo = findNodePath(newTree, nodeId);
+    if (!pathInfo || !pathInfo.parent || pathInfo.index === pathInfo.parent.length - 1) return;
+
+    const temp = pathInfo.parent[pathInfo.index + 1];
+    pathInfo.parent[pathInfo.index + 1] = pathInfo.parent[pathInfo.index];
+    pathInfo.parent[pathInfo.index] = temp;
+    onUpdateTree(newTree);
+  }, [hierarchyTree, onUpdateTree, findNodePath]);
+
   const renderTreeNode = useCallback((node: HierarchyNode, level: number = 0) => {
     const isExpanded = expandedNodes.has(node.id);
     const hasChildren = node.children.length > 0;
     const isEditing = editingNodeId === node.id;
     const isShowingAddSection = showAddSection === node.id;
 
-    
     return (
       <div key={node.id} className="relative">
         {/* صف العقدة */}
@@ -186,21 +264,19 @@ export const TreeEditorModal: React.FC<TreeEditorModalProps> = ({
             ${level > 0 ? 'before:absolute before:top-1/2 before:-left-6 before:w-6 before:h-0.5 before:bg-slate-300' : ''}
             ${node.type === 'project' ? 'bg-gradient-to-r from-blue-50/50 to-indigo-50/30' : ''}
           `}
-            style={{ paddingLeft: `${level === 0 ? 0 : level * 24}px` }}
+          style={{ paddingLeft: `${level === 0 ? 0 : level * 24}px` }}
         >
           {/* زر الطي/الفتح */}
-          {hasChildren && (
-            <button
-              onClick={() => toggleExpanded(node.id)}
-              className="p-1.5 hover:bg-slate-200/70 rounded-md transition-all duration-200 mr-3 shadow-sm"
-            >
-              {isExpanded ? (
-                <ChevronDown size={16} className="text-slate-600" />
-              ) : (
-                <ChevronRight size={16} className="text-slate-600" />
-              )}
-            </button>
-          )}
+          <button
+            onClick={() => toggleExpanded(node.id)}
+            className="p-1.5 hover:bg-slate-200/70 rounded-md transition-all duration-200 mr-3 shadow-sm"
+          >
+            {isExpanded ? (
+              <ChevronDown size={16} className="text-slate-600" />
+            ) : (
+              <ChevronRight size={16} className="text-slate-600" />
+            )}
+          </button>
 
           {/* محتوى العقدة */}
           <div className="flex-1 min-w-0">
@@ -235,21 +311,54 @@ export const TreeEditorModal: React.FC<TreeEditorModalProps> = ({
                 </span>
                 <div className="opacity-0 group-hover:opacity-100 flex items-center gap-2">
                   {(node.type === 'project' || node.type === 'section') && (
-                    <button
-                      onClick={() => setShowAddSection(node.id)}
-                      className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg"
-                      title="إضافة قسم"
-                    >
-                      <FolderPlus size={14} />
-                    </button>
+                    <>
+                      <button
+                        onClick={() => {
+                          setShowAddSection(node.id);
+                          setAddPosition('above');
+                        }}
+                        className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg"
+                        title="إضافة قسم فوق الحالي"
+                      >
+                        <ArrowUp size={14} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowAddSection(node.id);
+                          setAddPosition('below');
+                        }}
+                        className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg"
+                        title="إضافة قسم تحت الحالي"
+                      >
+                        <ArrowDown size={14} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowAddSection(node.id);
+                          setAddPosition('child');
+                        }}
+                        className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg"
+                        title="إضافة قسم فرعي"
+                      >
+                        <FolderPlus size={14} />
+                      </button>
+                    </>
                   )}
                   <button onClick={() => handleEditStart(node)} className="p-2 text-amber-600 hover:bg-amber-100 rounded-lg" title="تعديل">
                     <Edit2 size={14} />
                   </button>
                   {node.type !== 'project' && (
-                    <button onClick={() => handleDeleteClick(node)} className="p-2 text-red-600 hover:bg-red-100 rounded-lg" title="حذف">
-                      <Trash2 size={14} />
-                    </button>
+                    <>
+                      <button onClick={() => handleMoveUp(node.id)} className="p-2 text-indigo-600 hover:bg-indigo-100 rounded-lg" title="تحريك لأعلى">
+                        <ArrowUpCircle size={14} />
+                      </button>
+                      <button onClick={() => handleMoveDown(node.id)} className="p-2 text-indigo-600 hover:bg-indigo-100 rounded-lg" title="تحريك لأسفل">
+                        <ArrowDownCircle size={14} />
+                      </button>
+                      <button onClick={() => handleDeleteClick(node)} className="p-2 text-red-600 hover:bg-red-100 rounded-lg" title="حذف">
+                        <Trash2 size={14} />
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -257,30 +366,40 @@ export const TreeEditorModal: React.FC<TreeEditorModalProps> = ({
           </div>
         </div>
 
-        {/* نموذج إضافة قسم تحت هذه العقدة */}
+        {/* نموذج إضافة قسم */}
         {isShowingAddSection && (
           <div className="mx-8 mt-2 mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/60 rounded-lg shadow-sm">
             <div className="flex items-center gap-2">
               <input
                 type="text"
-                placeholder="اسم القسم الجديد"
+                placeholder={
+                  addPosition === 'above' ? 'اسم القسم الجديد (فوق الحالي)' :
+                  addPosition === 'below' ? 'اسم القسم الجديد (تحت الحالي)' :
+                  'اسم القسم الفرعي الجديد'
+                }
                 value={newSectionName}
                 onChange={(e) => setNewSectionName(e.target.value)}
                 className="flex-1 px-3 py-2 border-2 border-blue-300/70 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/50 bg-white/80 shadow-sm"
                 autoFocus
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleAddSection(node.id);
-                  if (e.key === 'Escape') setShowAddSection(null);
+                  if (e.key === 'Enter') handleAddSection(node.id, addPosition && addPosition !== 'child' ? node.id : null, addPosition || 'child');
+                  if (e.key === 'Escape') {
+                    setShowAddSection(null);
+                    setAddPosition(null);
+                  }
                 }}
               />
               <button
-                onClick={() => handleAddSection(node.id)}
+                onClick={() => handleAddSection(node.id, addPosition && addPosition !== 'child' ? node.id : null, addPosition || 'child')}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-all duration-200 shadow-md hover:shadow-lg"
               >
                 إضافة
               </button>
               <button
-                onClick={() => setShowAddSection(null)}
+                onClick={() => {
+                  setShowAddSection(null);
+                  setAddPosition(null);
+                }}
                 className="px-4 py-2 bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-400 transition-all duration-200"
               >
                 إلغاء
@@ -297,7 +416,7 @@ export const TreeEditorModal: React.FC<TreeEditorModalProps> = ({
         )}
       </div>
     );
-  }, [expandedNodes, editingNodeId, editContent, showAddSection, toggleExpanded, handleEditStart, handleEditSave, handleEditCancel, handleAddSection, handleDeleteClick]);
+  }, [expandedNodes, editingNodeId, editContent, showAddSection, addPosition, toggleExpanded, handleEditStart, handleEditSave, handleEditCancel, handleAddSection, handleDeleteClick, handleMoveUp, handleMoveDown]);
 
   if (!isOpen) return null;
 
@@ -350,18 +469,24 @@ export const TreeEditorModal: React.FC<TreeEditorModalProps> = ({
                     className="flex-1 px-3 py-2 border-2 border-blue-300/70 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/50 bg-white/80 shadow-sm"
                     autoFocus
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleAddSection('root');
-                      if (e.key === 'Escape') setShowAddSection(null);
+                      if (e.key === 'Enter') handleAddSection('root', null, 'below');
+                      if (e.key === 'Escape') {
+                        setShowAddSection(null);
+                        setAddPosition(null);
+                      }
                     }}
                   />
                   <button
-                    onClick={() => handleAddSection('root')}
+                    onClick={() => handleAddSection('root', null, 'below')}
                     className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-all duration-200 shadow-md hover:shadow-lg"
                   >
                     إضافة
                   </button>
                   <button
-                    onClick={() => setShowAddSection(null)}
+                    onClick={() => {
+                      setShowAddSection(null);
+                      setAddPosition(null);
+                    }}
                     className="px-6 py-2 bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-400 transition-all duration-200"
                   >
                     إلغاء

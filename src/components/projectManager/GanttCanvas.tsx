@@ -257,7 +257,7 @@ export const GanttCanvas: React.FC<GanttCanvasProps> = ({
     rowHeight: 40, // Increased for better touch targets
     taskHeight: 24,
     headerHeight: 80,
-    minZoom: 0.3,
+    minZoom: 0.1,
     maxZoom: 1.5,
     gridColor: '#e5e7eb',
     weekendColor: '#fef3f2',
@@ -279,7 +279,11 @@ export const GanttCanvas: React.FC<GanttCanvasProps> = ({
 
   const scaledDayWidth = useMemo(() => CANVAS_CONFIG.dayWidth * viewState.zoom, [CANVAS_CONFIG.dayWidth, viewState.zoom]);
   const scaledRowHeight = useMemo(() => CANVAS_CONFIG.rowHeight * viewState.zoom, [CANVAS_CONFIG.rowHeight, viewState.zoom]);
-  const scaledTaskHeight = useMemo(() => CANVAS_CONFIG.taskHeight * viewState.zoom, [CANVAS_CONFIG.taskHeight, viewState.zoom]);
+
+  const scaledTaskHeight = useMemo(() => {
+  const baseHeight = CANVAS_CONFIG.taskHeight;
+  return Math.min(baseHeight * viewState.zoom, scaledRowHeight * 0.8);
+}, [CANVAS_CONFIG.taskHeight, viewState.zoom, scaledRowHeight]);
 
 
 
@@ -471,7 +475,7 @@ export const GanttCanvas: React.FC<GanttCanvasProps> = ({
 
     const generateData = useCallback((): HierarchyNode[] => {
       const totalDays = 30; // مدة المشروع شهر كامل
-      const totalTasks = 1000; // عدد المهام المطلوب
+      const totalTasks = 20; // عدد المهام المطلوب
       const authors = ['Engineer A', 'Engineer B', 'Contractor C'];
 
       const generateRandomTasks = (parentId: string, taskCount: number): Task[] => {
@@ -718,19 +722,18 @@ export const GanttCanvas: React.FC<GanttCanvasProps> = ({
   }, []);
 
   const calculateNodeHeight = useCallback((node: HierarchyNode): number => {
-    if (node.isLeaf && node.tasks && node.tasks.length > 0) {
-      const maxRow = Math.max(...node.tasks.map(t => t.row || 0));
-      // تثبيت ارتفاع الصف بدون ضربه في الزوم
-      const baseRowHeight = CANVAS_CONFIG.rowHeight;
-      const totalHeight = (maxRow + 2) * baseRowHeight;
-      
-      // تطبيق تأثير الزوم بشكل محدود
-      const zoomFactor = Math.min(Math.max(viewState.zoom, 0.5), 1.5);
-      return totalHeight * zoomFactor;
-    }
-    return CANVAS_CONFIG.rowHeight * Math.min(Math.max(viewState.zoom, 0.5), 1.5);
-  }, [CANVAS_CONFIG.rowHeight, viewState.zoom]);
-
+  if (node.isLeaf && node.tasks && node.tasks.length > 0) {
+    const maxRow = Math.max(...node.tasks.map(t => t.row || 0));
+    // حساب الارتفاع الكلي بناءً على عدد الصفوف
+    const rowCount = maxRow + 1;
+    const paddingTop = CANVAS_CONFIG.taskPadding * viewState.zoom;
+    const paddingBottom = CANVAS_CONFIG.taskPadding * viewState.zoom;
+    const rowHeight = CANVAS_CONFIG.rowHeight * viewState.zoom;
+    
+    return paddingTop + (rowCount * rowHeight) + paddingBottom;
+  }
+  return CANVAS_CONFIG.rowHeight * viewState.zoom;
+}, [CANVAS_CONFIG.rowHeight, CANVAS_CONFIG.taskPadding, viewState.zoom]);
 
 
   
@@ -768,12 +771,15 @@ export const GanttCanvas: React.FC<GanttCanvasProps> = ({
 
   const getTaskConnectionPoints = useCallback((task: Task, node: HierarchyNode) => {
   const effectiveLeftPanelWidth = getEffectiveLeftPanelWidth();
-
-  const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1; // 1/5 = 0.2
+  
+  const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1;
   const displayStartDay = task.startDay * scaleFactor;
   const displayDuration = task.duration * scaleFactor;
-
-  const baseY = (node.yPosition || 0) + CANVAS_CONFIG.taskPadding + (task.row || 0) * (scaledTaskHeight + CANVAS_CONFIG.taskPadding);
+  
+  // استخدام نفس حساب taskY المحدث
+  const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
+  const baseY = (node.yPosition || 0) + (CANVAS_CONFIG.taskPadding * viewState.zoom) + 
+                (task.row || 0) * rowSpacing;
   
   if (task.type === 'milestone') {
     const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
@@ -794,7 +800,7 @@ export const GanttCanvas: React.FC<GanttCanvasProps> = ({
       end: { x: taskX + taskWidth, y: taskY }
     };
   }
-}, [CANVAS_CONFIG, scaledDayWidth, scaledTaskHeight, viewState.offsetX, getEffectiveLeftPanelWidth, timeAxisMode, viewState.zoom]);
+}, [CANVAS_CONFIG, scaledDayWidth, scaledTaskHeight, viewState.offsetX, viewState.zoom, getEffectiveLeftPanelWidth, timeAxisMode]);
 
 
   // Add new ref for delete buttons hit areas
@@ -991,7 +997,10 @@ const calculateAdjustedDuration = (startDay: number, originalDuration: number, t
           if (dropY >= node.yPosition && dropY < node.yPosition + node.height) {
               if (node.isLeaf) {
                   targetNode = node;
-                  const relativeY = dropY - node.yPosition - CANVAS_CONFIG.taskPadding;
+                  const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
+                  const relativeY = dropY - node.yPosition - (CANVAS_CONFIG.taskPadding * viewState.zoom);
+                  targetRow = Math.floor(relativeY / rowSpacing);
+
                   targetRow = Math.floor(relativeY / (scaledTaskHeight + CANVAS_CONFIG.taskPadding));
                   break;
               }
@@ -1431,6 +1440,16 @@ const drawCanvas = useCallback(() => {
   const workAreaBottom = flattened.reduce((maxY, node) => 
     node.yPosition && node.height ? Math.max(maxY, node.yPosition + node.height) : maxY, workAreaTop);
 
+  // تأكد من أن كل قسم له حد أدنى من الارتفاع
+  flattened.forEach(node => {
+    if (node.isLeaf && node.tasks.length > 0 && node.height) {
+      const requiredHeight = calculateNodeHeight(node);
+      if (node.height < requiredHeight) {
+        node.height = requiredHeight;
+      }
+    }
+  });
+
   const firstTaskNode = flattened.find(node => node.isLeaf && node.tasks.length > 0);
   const actualWorkAreaTop = firstTaskNode && firstTaskNode.yPosition ? 
     firstTaskNode.yPosition + CANVAS_CONFIG.taskPadding : workAreaTop;
@@ -1576,7 +1595,9 @@ const drawCanvas = useCallback(() => {
           const displayDuration = displayTask.duration * scaleFactor;
 
           const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
-          const taskY = nodeY + CANVAS_CONFIG.taskPadding + (displayTask.row || 0) * (scaledTaskHeight + CANVAS_CONFIG.taskPadding);
+          const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
+          const taskY = nodeY + (CANVAS_CONFIG.taskPadding * viewState.zoom) + 
+                        (displayTask.row || 0) * rowSpacing;
 
           // التحقق مما إذا كانت المهمة محددة
           const isSelected = selectedTasks.has(displayTask.id);
@@ -1854,12 +1875,17 @@ const drawCanvas = useCallback(() => {
             ctx.lineWidth = 2;
             ctx.setLineDash([]);
 
+            // استخدم نفس الحسابات الجديدة للإحداثيات
             const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1;
             const displayStartDay = displayTask.startDay * scaleFactor;
             const displayDuration = displayTask.duration * scaleFactor;
 
             const currentTaskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
-            const currentTaskY = nodeY + CANVAS_CONFIG.taskPadding + (displayTask.row || 0) * (scaledTaskHeight + CANVAS_CONFIG.taskPadding);
+            
+            // استخدم الحساب الجديد لـ Y
+            const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
+            const currentTaskY = nodeY + (CANVAS_CONFIG.taskPadding * viewState.zoom) + 
+                                (displayTask.row || 0) * rowSpacing;
 
             if (displayTask.type === 'milestone') {
               const baseSize = CANVAS_CONFIG.milestoneSize * 1.5;
@@ -1900,30 +1926,6 @@ const drawCanvas = useCallback(() => {
     
     drawSidebar(ctx, rect, flattened);
     
-
-    if (inlineEditingTask && inlineEditingTask.field === 'content') {
-      // ارسم input field فوق المهمة
-      const flattened = flattenTree(hierarchyTree);
-      const targetNode = flattened.find(n => n.id === inlineEditingTask.nodeId);
-      const targetTask = targetNode?.tasks.find(t => t.id === inlineEditingTask.taskId);
-      
-      if (targetTask && targetNode && targetNode.yPosition) {
-        const taskX = effectiveLeftPanelWidth + viewState.offsetX + targetTask.startDay * scaledDayWidth;
-        const taskY = targetNode.yPosition + CANVAS_CONFIG.taskPadding + (targetTask.row || 0) * (scaledTaskHeight + CANVAS_CONFIG.taskPadding);
-        const taskWidth = targetTask.duration * scaledDayWidth;
-        
-        // رسم خلفية بيضاء للـ input
-        ctx.save();
-        ctx.fillStyle = '#ffffff';
-        ctx.strokeStyle = '#3b82f6';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.roundRect(taskX - 2, taskY - 2, taskWidth + 4, scaledTaskHeight + 4, CANVAS_CONFIG.taskBorderRadius);
-        ctx.fill();
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
 
   }, [
     // Dependencies محدثة مع إعدادات العرض الجديدة
@@ -2797,15 +2799,18 @@ const moveNodeDown = useCallback((nodeId: string) => {
         const displayDuration = task.duration * scaleFactor;
 
         const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
-        const taskY = nodeY + CANVAS_CONFIG.taskPadding + (task.row || 0) * (scaledTaskHeight + CANVAS_CONFIG.taskPadding);
+        
+        // استخدم نفس الحساب الجديد
+        const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
+        const taskY = node.yPosition + (CANVAS_CONFIG.taskPadding * viewState.zoom) + 
+                      (task.row || 0) * rowSpacing;
         
         if (task.type === 'milestone') {
-          const size = CANVAS_CONFIG.milestoneSize * 1.5 * viewState.zoom; // تأكد من استخدام نفس الحجم
+          const size = CANVAS_CONFIG.milestoneSize * 1.5 * viewState.zoom;
           const milestoneY = taskY + scaledTaskHeight / 2;
           const dx = Math.abs(mouseX - taskX);
           const dy = Math.abs(mouseY - milestoneY);
           
-          // ★ تحسين حساب المسافة للمعالم
           if (dx <= size / 2 && dy <= size / 2) {
             clickedTask = task;
             clickedNode = node;
@@ -3104,7 +3109,11 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
           const displayDuration = task.duration * scaleFactor;
 
           const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
-          const taskY = node.yPosition + CANVAS_CONFIG.taskPadding + (task.row || 0) * (scaledTaskHeight + CANVAS_CONFIG.taskPadding);
+          
+          // استخدم نفس الحساب الجديد
+          const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
+          const taskY = node.yPosition + (CANVAS_CONFIG.taskPadding * viewState.zoom) + 
+                        (task.row || 0) * rowSpacing;
           
           // فحص المعالم والمهام العادية
           let isHovering = false;
@@ -3113,7 +3122,7 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
             const milestoneY = taskY + scaledTaskHeight / 2;
             const dx = Math.abs(mouseX - taskX);
             const dy = Math.abs(mouseY - milestoneY);
-            isHovering = (dx / (size / 2) + dy / (size / 2)) <= 1;
+            isHovering = dx <= size / 2 && dy <= size / 2;
           } else {
             const taskWidth = displayDuration * scaledDayWidth;
             isHovering = mouseX >= taskX && mouseX <= taskX + taskWidth && 
@@ -3125,6 +3134,7 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
             break;
           }
         }
+
         if (hoveredTask) break;
       }
 
@@ -3161,25 +3171,26 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
   
     
     if (taskDragState.isDragging && taskDragState.task && taskDragState.originalTask) {
-        e.preventDefault();
-        
-        const deltaX = mouseX - taskDragState.startMouseX;
-        const deltaY = mouseY - taskDragState.startMouseY;
-        
-        const scaleFactor = timeAxisMode === 'weeks' ? 5 : 1;
-        const daysDelta = (deltaX / scaledDayWidth) * scaleFactor;
-        const rowsDelta = deltaY / (scaledTaskHeight + CANVAS_CONFIG.taskPadding);
+      e.preventDefault();
+      
+      const deltaX = mouseX - taskDragState.startMouseX;
+      const deltaY = mouseY - taskDragState.startMouseY;
+      
+      const scaleFactor = timeAxisMode === 'weeks' ? 5 : 1;
+      const daysDelta = (deltaX / scaledDayWidth) * scaleFactor;
+      
+      // حساب rowsDelta بناءً على rowSpacing الجديد
+      const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
+      const rowsDelta = deltaY / rowSpacing;
 
-        let newTask = { ...taskDragState.originalTask };
-        const totalDays = getTotalProjectDays();
+      let newTask = { ...taskDragState.originalTask };
+      const totalDays = getTotalProjectDays();
 
-        if (taskDragState.type === 'move') {
-          // سحب بسيط بدون معالجة العطل
-          newTask.startDay = taskDragState.originalTask.startDay + daysDelta;
-          newTask.startDay = Math.max(0, Math.min(totalDays - newTask.duration, newTask.startDay));
-          newTask.row = Math.max(0, (taskDragState.originalTask.row || 0) + rowsDelta);
-          
-        } else if (taskDragState.type === 'resize-left') {
+      if (taskDragState.type === 'move') {
+        newTask.startDay = taskDragState.originalTask.startDay + daysDelta;
+        newTask.startDay = Math.max(0, Math.min(totalDays - newTask.duration, newTask.startDay));
+        newTask.row = Math.max(0, (taskDragState.originalTask.row || 0) + rowsDelta);
+      } else if (taskDragState.type === 'resize-left') {
           let newStartDay = taskDragState.originalTask.startDay + daysDelta;
           let rawDuration = taskDragState.originalTask.duration - (newStartDay - taskDragState.originalTask.startDay);
           newTask.startDay = newStartDay;
@@ -3242,39 +3253,45 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
       } else if (isLinkMode && showLinks) {
         canvas.style.cursor = 'crosshair';
       } else {
-       // البحث عن مهمة تحت المؤشر
-    const flattened = flattenTree(hierarchyTree);
-    
-    for (const node of flattened) {
-      if (!node.isLeaf || !node.tasks || !node.yPosition) continue;
-      
-      for (const task of node.tasks) {
-        const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1;
-        const displayStartDay = task.startDay * scaleFactor;
-        const displayDuration = task.duration * scaleFactor;
-
-        const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
-        const taskY = node.yPosition + CANVAS_CONFIG.taskPadding + (task.row || 0) * (scaledTaskHeight + CANVAS_CONFIG.taskPadding);
+        // البحث عن مهمة تحت المؤشر
+        const flattened = flattenTree(hierarchyTree);
+        let cursorSet = false;
         
-        if (task.type === 'milestone') {
-          const size = CANVAS_CONFIG.milestoneSize * viewState.zoom;
-          const milestoneY = taskY + scaledTaskHeight / 2;
-          const dx = Math.abs(mouseX - taskX);
-          const dy = Math.abs(mouseY - milestoneY);
+        for (const node of flattened) {
+          if (!node.isLeaf || !node.tasks || !node.yPosition) continue;
           
-          if ((dx / (size / 2) + dy / (size / 2)) <= 1) { // داخل المعلم
-            // تحديد cursor بناءً على الموقع داخل المعلم
-            const moveZoneWidth = size * 0.4; // نفس النسبة
-            const centerX = taskX;
+          for (const task of node.tasks) {
+            const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1;
+            const displayStartDay = task.startDay * scaleFactor;
+            const displayDuration = task.duration * scaleFactor;
+
+            const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
             
-            if (mouseX < centerX - moveZoneWidth / 2 || mouseX > centerX + moveZoneWidth / 2) {
-              canvas.style.cursor = 'col-resize';
+            // استخدم الحساب الجديد
+            const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
+            const taskY = node.yPosition + (CANVAS_CONFIG.taskPadding * viewState.zoom) + 
+                          (task.row || 0) * rowSpacing;
+            
+            if (task.type === 'milestone') {
+              const size = CANVAS_CONFIG.milestoneSize * 1.5 * viewState.zoom;
+              const milestoneY = taskY + scaledTaskHeight / 2;
+              const dx = Math.abs(mouseX - taskX);
+              const dy = Math.abs(mouseY - milestoneY);
+              
+              if (dx <= size / 2 && dy <= size / 2) {
+                // تحديد cursor بناءً على الموقع داخل المعلم
+                const moveZoneWidth = size * 0.4;
+                const centerX = taskX;
+                
+                if (mouseX < centerX - moveZoneWidth / 2 || mouseX > centerX + moveZoneWidth / 2) {
+                  canvas.style.cursor = 'col-resize';
+                } else {
+                  canvas.style.cursor = 'grab';
+                }
+                cursorSet = true;
+                break;
+              }
             } else {
-              canvas.style.cursor = 'grab';
-            }
-            return;
-          }
-        } else {
               const taskWidth = displayDuration * scaledDayWidth;
               
               if (mouseX >= taskX && mouseX <= taskX + taskWidth && 
@@ -3286,10 +3303,16 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
                 } else {
                   canvas.style.cursor = 'grab';
                 }
-                return;
+                cursorSet = true;
+                break;
               }
             }
           }
+          if (cursorSet) break;
+        }
+        
+        if (!cursorSet) {
+          canvas.style.cursor = 'default';
         }
       }
     }
@@ -3465,18 +3488,16 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
   const mouseX = e.clientX - rect.left;
   const mouseY = e.clientY - rect.top;
 
-  if (sidebarCollapsed || mouseX < CANVAS_CONFIG.leftPanelWidth) return;  // تجاهل إذا في الشريط الجانبي
+  if (sidebarCollapsed || mouseX < CANVAS_CONFIG.leftPanelWidth) return;
 
-  const effectiveLeftPanelWidth = sidebarCollapsed ? 0 : CANVAS_CONFIG.leftPanelWidth;
-  
+  const effectiveLeftPanelWidth = getEffectiveLeftPanelWidth();
   const flattened = flattenTree(hierarchyTree);
+  
   let clickedTask: Task | null = null;
   let clickedNode: HierarchyNode | null = null;
 
   for (const node of flattened) {
     if (!node.isLeaf || !node.tasks || !node.yPosition || !node.height) continue;
-    
-    const nodeY = node.yPosition;
     
     for (const task of node.tasks) {
       const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1;
@@ -3484,15 +3505,19 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
       const displayDuration = task.duration * scaleFactor;
 
       const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
-      const taskY = nodeY + CANVAS_CONFIG.taskPadding + (task.row || 0) * (scaledTaskHeight + CANVAS_CONFIG.taskPadding);
       
+      // استخدم نفس الحساب الجديد
+     const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
+      const taskY = node.yPosition + (CANVAS_CONFIG.taskPadding * viewState.zoom) + 
+                    (task.row || 0) * rowSpacing;
+        
       if (task.type === 'milestone') {
         const size = CANVAS_CONFIG.milestoneSize * viewState.zoom;
         const milestoneY = taskY + scaledTaskHeight / 2;
         const dx = Math.abs(mouseX - taskX);
         const dy = Math.abs(mouseY - milestoneY);
         
-        if ((dx / (size / 2) + dy / (size / 2)) <= 1) {
+        if (dx <= size / 2 && dy <= size / 2) {
           clickedTask = task;
           clickedNode = node;
           break;
@@ -3519,7 +3544,6 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
       field: 'content'
     });
   }
-
 }, [hierarchyTree, viewState, scaledDayWidth, scaledTaskHeight, CANVAS_CONFIG, flattenTree, sidebarCollapsed, timeAxisMode]);
 
   // أضف معالج النقر بالزر الأيمن:
@@ -3545,8 +3569,10 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
         const displayDuration = task.duration * scaleFactor;
 
         const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
-        const taskY = node.yPosition + CANVAS_CONFIG.taskPadding + (task.row || 0) * (scaledTaskHeight + CANVAS_CONFIG.taskPadding);
-        
+        const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
+        const taskY = node.yPosition + (CANVAS_CONFIG.taskPadding * viewState.zoom) + 
+                      (task.row || 0) * rowSpacing;
+                
         if (task.type === 'milestone') {
           const size = CANVAS_CONFIG.milestoneSize * viewState.zoom;
           const milestoneY = taskY + scaledTaskHeight / 2;
@@ -4133,73 +4159,94 @@ useEffect(() => {
         
 
          {/* في return statement، أضف بعد canvas: */}
-        {inlineEditingTask && inlineEditingTask.field === 'content' && (() => {
-          const flattened = flattenTree(hierarchyTree);
-          const targetNode = flattened.find(n => n.id === inlineEditingTask.nodeId);
-          const targetTask = targetNode?.tasks.find(t => t.id === inlineEditingTask.taskId);
-          
-          if (!targetTask || !targetNode?.yPosition) return null;
-          
-          const effectiveLeftPanelWidth = sidebarCollapsed ? 0 : CANVAS_CONFIG.leftPanelWidth;
-          const taskX = effectiveLeftPanelWidth + viewState.offsetX + targetTask.startDay * scaledDayWidth;
-          const taskY = targetNode.yPosition + CANVAS_CONFIG.taskPadding + (targetTask.row || 0) * (scaledTaskHeight + CANVAS_CONFIG.taskPadding);
-          const taskWidth = targetTask.duration * scaledDayWidth;
-          
-          return (
-            <input
-              autoFocus
-              type="text"
-              defaultValue={targetTask.content}
-              className="absolute bg-white border-2 border-blue-500 rounded px-2 py-1 text-sm z-50"
-              style={{
-                left: `${taskX}px`,
-                top: `${taskY}px`,
-                width: `${Math.max(100, taskWidth)}px`,
-                height: `${scaledTaskHeight}px`,
-                fontSize: `${Math.max(8, 10 * viewState.zoom)}px`
-              }}
-              onBlur={(e) => {
-                const newContent = e.target.value.trim();
-                if (newContent && newContent !== targetTask.content) {
-                  setHierarchyTree(prev => {
-                    const updateInTree = (nodes: HierarchyNode[]): HierarchyNode[] => {
-                      return nodes.map(node => ({
-                        ...node,
-                        tasks: node.id === inlineEditingTask.nodeId 
-                          ? node.tasks.map(t => t.id === targetTask.id ? { ...t, content: newContent } : t)
-                          : node.tasks,
-                        children: updateInTree(node.children)
-                      }));
-                    };
-                    return updateInTree(prev);
-                  });
-                }
-                setInlineEditingTask(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.currentTarget.blur();
-                } else if (e.key === 'Escape') {
+          {inlineEditingTask && inlineEditingTask.field === 'content' && (() => {
+            const flattened = flattenTree(hierarchyTree);
+            const targetNode = flattened.find(n => n.id === inlineEditingTask.nodeId);
+            const targetTask = targetNode?.tasks.find(t => t.id === inlineEditingTask.taskId);
+            
+            if (!targetTask || !targetNode?.yPosition) return null;
+            
+            const effectiveLeftPanelWidth = getEffectiveLeftPanelWidth();
+            const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1;
+            const displayStartDay = targetTask.startDay * scaleFactor;
+            const displayDuration = targetTask.duration * scaleFactor;
+            
+            const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
+            
+            // استخدم الحساب الجديد
+            const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
+            const taskY = targetNode.yPosition + (CANVAS_CONFIG.taskPadding * viewState.zoom) + 
+                          (targetTask.row || 0) * rowSpacing;
+            
+            const taskWidth = displayDuration * scaledDayWidth;
+            
+            return (
+              <input
+                autoFocus
+                type="text"
+                defaultValue={targetTask.content}
+                className="absolute bg-white border-2 border-blue-500 rounded px-2 py-1 text-sm z-50"
+                style={{
+                  left: `${taskX - 2}px`, // تعديل الموضع قليلاً
+                  top: `${taskY - 2}px`,
+                  width: `${Math.max(100, taskWidth + 4)}px`, // زيادة العرض قليلاً
+                  height: `${scaledTaskHeight + 4}px`, // زيادة الارتفاع قليلاً
+                  fontSize: `${Math.max(8, 10 * viewState.zoom)}px`,
+                  backgroundColor: '#ffffff',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.15)' // إضافة ظل
+                }}
+                onBlur={(e) => {
+                  const newContent = e.target.value.trim();
+                  if (newContent && newContent !== targetTask.content) {
+                    setHierarchyTree(prev => {
+                      const updateInTree = (nodes: HierarchyNode[]): HierarchyNode[] => {
+                        return nodes.map(node => ({
+                          ...node,
+                          tasks: node.id === inlineEditingTask.nodeId 
+                            ? node.tasks.map(t => t.id === targetTask.id ? { ...t, content: newContent } : t)
+                            : node.tasks,
+                          children: updateInTree(node.children)
+                        }));
+                      };
+                      return updateInTree(prev);
+                    });
+                  }
                   setInlineEditingTask(null);
-                }
-              }}
-            />
-          );
-        })()}
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.currentTarget.blur();
+                  } else if (e.key === 'Escape') {
+                    setInlineEditingTask(null);
+                  }
+                }}
+              />
+            );
+          })()}
 
     {hoverTooltip?.visible && (() => {
       const flattened = flattenTree(hierarchyTree);
       const targetNode = flattened.find(n => n.id === hoverTooltip.nodeId);
       const targetTask = targetNode?.tasks.find(t => t.id === hoverTooltip.taskId);
       
-      if (!targetTask) return null;
+      if (!targetTask || !targetNode?.yPosition) return null;
+      
+      // حساب موضع المهمة الفعلي
+      const effectiveLeftPanelWidth = getEffectiveLeftPanelWidth();
+      const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1;
+      const displayStartDay = targetTask.startDay * scaleFactor;
+      
+      const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
+      const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
+      const taskY = targetNode.yPosition + (CANVAS_CONFIG.taskPadding * viewState.zoom) + 
+                    (targetTask.row || 0) * rowSpacing;
       
       return (
         <div
           className="absolute bg-gray-800 text-white rounded-lg p-3 shadow-lg z-50 min-w-[200px] transition-opacity duration-300"
           style={{
-            left: `${hoverTooltip.x + 10}px`,
-            top: `${hoverTooltip.y - 80}px`,
+            left: `${taskX + 10}px`,
+            top: `${taskY - 80}px`,
             opacity: hoverTooltip.visible ? 1 : 0,
             pointerEvents: hoverTooltip.visible ? 'auto' : 'none'
           }}
@@ -4305,27 +4352,35 @@ useEffect(() => {
 
 
         {editingNodeId && (() => {
-        const flattened = flattenTree(hierarchyTree);
-        const targetNode = flattened.find(n => n.id === editingNodeId);
-        
-        if (!targetNode || !targetNode.yPosition) return null;
-        
-        const indent = 15 + targetNode.level * 25;
-        const centerY = targetNode.yPosition + Math.min(targetNode.height || 0, scaledRowHeight) / 2;
+          const flattened = flattenTree(hierarchyTree);
+          const targetNode = flattened.find(n => n.id === editingNodeId);
+          
+          if (!targetNode || !targetNode.yPosition) return null;
+          
+          // حساب المسافة البادئة بنفس طريقة drawTreeNodes
+          const baseIndent = 15;
+          const levelIndent = Math.max(15, Math.min(35, 25 * Math.min(viewState.zoom, 1.5)));
+          const indent = baseIndent + targetNode.level * levelIndent;
+          
+          // حساب centerY بنفس الطريقة
+          const lineHeight = Math.max(25, Math.min(50, scaledRowHeight * 0.8));
+          const centerY = Math.max(
+            targetNode.yPosition + Math.min(targetNode.height || 0, lineHeight) / 2, 
+            CANVAS_CONFIG.headerHeight + 20
+          );
 
-
-        return (
-          <input
-            autoFocus
-            type="text"
-            value={editingNodeContent}
-            onChange={(e) => setEditingNodeContent(e.target.value)}
-            className="absolute bg-white border-2 border-blue-500 rounded px-2 py-1"
-            style={{
+          return (
+            <input
+              autoFocus
+              type="text"
+              value={editingNodeContent}
+              onChange={(e) => setEditingNodeContent(e.target.value)}
+              className="absolute bg-white border-2 border-blue-500 rounded px-2 py-1"
+              style={{
                 left: `${indent + 20}px`,
                 top: `${centerY - 12}px`,
-                width: '120px',
-                height: '24px',
+                width: `${Math.max(80, Math.min(150, 120 * Math.min(viewState.zoom, 1.3)))}px`,
+                height: `${Math.max(20, Math.min(30, 24 * Math.min(viewState.zoom, 1.2)))}px`,
                 fontSize: `${Math.max(10, 12 * viewState.zoom)}px`
               }}
               onBlur={() => {
@@ -4343,9 +4398,10 @@ useEffect(() => {
                   setEditingNodeContent('');
                 }
               }}
-                        />
-        );
-      })()}
+            />
+          );
+        })()}
+
 
       </div>
     </div>
