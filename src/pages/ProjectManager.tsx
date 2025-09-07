@@ -185,6 +185,10 @@ const ProjectManager: React.FC = () => {
     filteredNodeCount: 0
   });
 
+
+  // إضافة state جديد للمهام المحددة الكاملة
+  const [selectedTasks, setSelectedTasks] = useState<Task[]>([]);
+
   // إضافة state للمسؤولين
   const [managers, setManagers] = useState<Manager[]>([
     { id: 'manager-1', name: 'أحمد محمد', color: '#3b82f6' },
@@ -530,10 +534,7 @@ const ProjectManager: React.FC = () => {
     setLeftSidebarVisible(false);
   }, []);
 
-  const handleMultipleTasksSelected = useCallback((taskIds: string[]) => {
-    setSelectedTaskIds(taskIds);
-    console.log('المهام المحددة:', taskIds);
-  }, []);
+
 
   // دالة لتحديث جميع المهام المرتبطة بمسؤول معين
   const updateTasksByManager = useCallback((managerId: string, updatedManager: Manager) => {
@@ -591,7 +592,16 @@ const ProjectManager: React.FC = () => {
     // يمكن إضافة منطق إضافي هنا مثل إظهار modal لاختيار المكان
   }, []);
 
-  
+  // إضافة معالج لتحديد المهام المتعددة واستخراج المهام الكاملة
+  const handleSelectedTasksChange = useCallback((tasksMap: Map<string, { task: Task; nodeId: string }>) => {
+      const taskIds = Array.from(tasksMap.keys());
+      const tasks = Array.from(tasksMap.values()).map(item => item.task);
+      
+      setSelectedTaskIds(taskIds);
+      setSelectedTasks(tasks);
+
+      console.log(selectedTasks)
+    }, []);
 
   const addHistoryEvent = useCallback((taskId: string, eventType: TaskHistoryEvent['eventType'], description: string, oldValue?: any, newValue?: any) => {
   const newHistoryEvent: TaskHistoryEvent = {
@@ -808,6 +818,29 @@ const handleReassignTasks = useCallback((oldManagerId: string, newManagerId: str
   // تحويل projectConfig.startDate إلى Date object للتحليلات
   const projectStartDate = new Date(projectConfig.startDate);
 
+  // إضافة معالج إنشاء قالب من المهام المحددة
+  const handleCreateTemplateFromSelection = useCallback(() => {
+
+    if (selectedTasks.length <= 1) return;
+
+    const newTemplate: TaskTemplate = {
+      id: `template-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name: 'قالب جديد من التحديد',
+      color: COLORS.hierarchyColors[Math.floor(Math.random() * COLORS.hierarchyColors.length)],
+      description: `تم إنشاؤه من ${selectedTasks.length} مهمة محددة`,
+      tasks: selectedTasks.map((task, index) => ({
+        ...task,
+        id: `task-template-${Date.now()}-${index}`,
+        row: index
+      }))
+    };
+
+    setTaskTemplates(prev => [...prev, newTemplate]);
+    setSelectedTaskIds([]);
+    setSelectedTasks([]);
+    console.log('تم إنشاء قالب جديد من المهام المحددة');
+  }, [selectedTasks]);
+
   return (
     <div className="h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex flex-col">
       <ProjectHeader
@@ -836,6 +869,9 @@ const handleReassignTasks = useCallback((oldManagerId: string, newManagerId: str
 
         onOpenTaskComments={handleOpenTaskComments}
         onOpenTaskHistory={handleOpenTaskHistory}
+
+        selectedTasks={selectedTasks}
+        onCreateTemplate={handleCreateTemplateFromSelection}
       />
 
       {/* Active Filters Display - only show for Gantt tab */}
@@ -868,13 +904,13 @@ const handleReassignTasks = useCallback((oldManagerId: string, newManagerId: str
               searchQuery={searchQuery}
               selectedTaskIds={selectedTaskIds}
               onTaskDrop={handleAddTask}
-              onTasksSelected={handleMultipleTasksSelected}
               showTreeEditor={showTreeEditor}
               setShowTreeEditor={setShowTreeEditor}
               hierarchyTree={getDisplayTree()}
               setHierarchyTree={setHierarchyTree}
               viewSettings={viewSettings}
               onTaskSelected={handleTaskSelected}
+              onSelectedTasksChange={handleSelectedTasksChange}
 
             />
           ) : activeTab === 'analytics' ? (

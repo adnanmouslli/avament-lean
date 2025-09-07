@@ -1,5 +1,3 @@
-"use client";
-
 import React from 'react';
 import { 
   Plus,
@@ -30,7 +28,8 @@ import {
   Edit,
   Trash2,
   MessageCircle,
-  Clock
+  Clock,
+  LayoutTemplate
 } from 'lucide-react';
 import { FilterCriteria } from './filter/FilterModal';
 import { hasActiveFilters } from './filter/FilterUtils';
@@ -96,13 +95,19 @@ interface ProjectHeaderProps {
 
   onOpenTaskComments?: () => void;
   onOpenTaskHistory?: () => void;  
+
+  // إضافة props جديدة للمهام المتعددة
+  selectedTasks?: Task[];
+  onCreateTemplate?: () => void;
 }
 
 export const ProjectHeader: React.FC<ProjectHeaderProps> = ({ 
   sidebarCollapsed, 
   setSidebarCollapsed, 
-  rightSidebarVisible = false,
+  rightSidebarVisible,
   onToggleRightSidebar,
+  leftSidebarVisible,
+  onToggleLeftSidebar,
   activeTab,
   onTabChange,
   viewState, 
@@ -117,12 +122,12 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
   onOpenViewSettings,
   viewSettings,
   projectName = "AVAMENT",
-  leftSidebarVisible = false,
-  onToggleLeftSidebar,
   selectedTask,
   onOpenTaskDetails,
   onOpenTaskComments,
-  onOpenTaskHistory
+  onOpenTaskHistory,
+  selectedTasks,
+  onCreateTemplate
 
 }) => {
 
@@ -138,6 +143,8 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
     return Object.values(viewSettings).filter(Boolean).length;
   };
 
+  const isMultipleSelected = (selectedTasks?.length || 0) > 1;
+  
   return (
     <div className="bg-white shadow-sm border-b border-gray-200 px-4 py-2 h-14 relative">
       <div className="flex items-center justify-between h-full">
@@ -209,7 +216,7 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
                   {/* مؤشر المهمة */}
                   <div className="flex items-center space-x-2 px-2">
                     <div className="w-2 h-2 rounded-full" style={{ backgroundColor: selectedTask.task.color }}></div>
-                    <span className="text-xs font-medium text-gray-700 max-w-32 truncate">
+                    <span className="text-text-xs font-medium text-gray-700 max-w-32 truncate">
                       {selectedTask.task.content}
                     </span>
                   </div>
@@ -243,11 +250,23 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
                     >
                       <Clock size={16} />
                     </button>
-
+                  
+                  {/* لوحة المهام المتعددة */}
+                  {isMultipleSelected && (
+                    <button
+                      onClick={onCreateTemplate}
+                      className="p-1.5 rounded-md text-indigo-600 hover:bg-indigo-50 transition-colors flex items-center gap-1"
+                      title="إنشاء قالب من المهام المحددة"
+                    >
+                      <LayoutTemplate size={14} />
+                    </button>
+                   )} 
                     
                   </div>
                 </div>
               )}
+
+           
 
             <div className="flex items-center space-x-2">
 

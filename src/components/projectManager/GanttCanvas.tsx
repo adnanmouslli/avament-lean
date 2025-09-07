@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { ViewSettings } from './ViewSettingsModal';
 
 import { Slider } from '../ui/slider';
+import { TasksSummaryModal } from './TasksSummaryModal';
 
 
 const COLORS = {
@@ -116,7 +117,6 @@ interface GanttCanvasProps {
   searchQuery?: string;
   selectedTaskIds?: string[];
   onTaskDrop?: (task: any) => void;
-  onTasksSelected?: (taskIds: string[]) => void;
   onGroupAdded?: (group: HierarchyNode) => void;
   showTreeEditor?: boolean;
   setShowTreeEditor?: (show: boolean) => void;
@@ -125,6 +125,7 @@ interface GanttCanvasProps {
   viewSettings?: ViewSettings; 
   
   onTaskSelected?: (task: Task | null, nodeId?: string) => void;
+  onSelectedTasksChange?: (tasks: Map<string, { task: Task; nodeId: string }>) => void;
 
 }
 
@@ -139,8 +140,11 @@ export const GanttCanvas: React.FC<GanttCanvasProps> = ({
   hierarchyTree: externalHierarchyTree,
   setHierarchyTree: externalSetHierarchyTree,
   viewSettings,
-  onTaskSelected
+  onTaskSelected,
+  onSelectedTasksChange
 }) => {
+
+  
 
   const [localHierarchyTree, setLocalHierarchyTree] = useState<HierarchyNode[]>([]);
 
@@ -217,10 +221,10 @@ export const GanttCanvas: React.FC<GanttCanvasProps> = ({
 
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const imageLoadingRef = useRef<Set<string>>(new Set());
-  const imageHitRectsRef = useRef<Array<{ nodeId: string; x: number; y: number; w: number; h: number; url: string }>>([]);
+  const imageHitRectsRef = useRef<Array<{ nodeId: string; x: number; y: number; w: number; h: number; url: string | undefined }>>([]);
 
   const [imageTick, setImageTick] = useState(0);      // لعمل re-draw بعد ما تتحمل الصور
-  const [popupImage, setPopupImage] = useState<string | null>(null); // لعرض الصورة في popup
+  const [popupImage, setPopupImage] = useState<{ nodeId: string; url?: string } | null>(null); // تعديل الـ state ليشمل nodeId
 
   
   const getCachedImage = useCallback((url?: string | null) => {
@@ -305,7 +309,80 @@ export const GanttCanvas: React.FC<GanttCanvasProps> = ({
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
   const [dragOverNodeId, setDragOverNodeId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<'before' | 'after' | 'inside' | null>(null);
- 
+  
+
+  const [tasksSummaryModal, setTasksSummaryModal] = useState<{
+  isOpen: boolean;
+  node: HierarchyNode | null;
+  allTasks: Array<{ task: Task; nodePath: string; nodeId: string }>;
+}>({
+  isOpen: false,
+  node: null,
+  allTasks: []
+});
+
+// دالة لجمع جميع المهام من العقدة وأطفالها
+const collectAllTasks = useCallback((node: HierarchyNode, basePath: string = ''): Array<{ task: Task; nodePath: string; nodeId: string }> => {
+  const result: Array<{ task: Task; nodePath: string; nodeId: string }> = [];
+  const currentPath = basePath ? `${basePath} > ${node.content}` : node.content;
+  
+  // إضافة مهام العقدة الحالية
+  node.tasks.forEach(task => {
+    result.push({
+      task,
+      nodePath: currentPath,
+      nodeId: node.id
+    });
+  });
+  
+  // إضافة مهام الأطفال
+  node.children.forEach(child => {
+    result.push(...collectAllTasks(child, currentPath));
+  });
+  
+  return result;
+}, []);
+
+
+// إضافة معالج تحديث التقدم
+const handleUpdateTaskProgress = useCallback((taskId: string, nodeId: string, progress: number) => {
+  setHierarchyTree(prev => {
+    const updateInTree = (nodes: HierarchyNode[]): HierarchyNode[] => {
+      return nodes.map(node => ({
+        ...node,
+        tasks: node.id === nodeId 
+          ? node.tasks.map(t => t.id === taskId ? { ...t, progress } : t)
+          : node.tasks,
+        children: updateInTree(node.children)
+      }));
+    };
+    const updatedTree = updateInTree(prev);
+    
+    // أعد حساب المهام للـ modal
+    if (tasksSummaryModal.isOpen && tasksSummaryModal.node) {
+      const updatedNode = findNodeInTree(updatedTree, tasksSummaryModal.node.id);
+      if (updatedNode) {
+        const refreshedTasks = collectAllTasks(updatedNode);
+        setTasksSummaryModal(prevModal => ({
+          ...prevModal,
+          allTasks: refreshedTasks
+        }));
+      }
+    }
+    
+    return updatedTree;
+  });
+}, [tasksSummaryModal, collectAllTasks]);
+
+// أضف دالة مساعدة للعثور على العقدة
+const findNodeInTree = useCallback((nodes: HierarchyNode[], nodeId: string): HierarchyNode | null => {
+  for (const node of nodes) {
+    if (node.id === nodeId) return node;
+    const found = findNodeInTree(node.children, nodeId);
+    if (found) return found;
+  }
+  return null;
+}, []);
 
   // دوال التحكم بالشجرة في وضع التحرير
   const addNodeToTree = useCallback((parentId: string | null, position: 'before' | 'after' | 'inside') => {
@@ -1399,6 +1476,9 @@ const drawCanvas = useCallback(() => {
   const container = containerRef.current;
   if (!canvas || !container) return;
 
+  statsClickAreasRef.current = [];
+
+
   const ctx = canvas.getContext('2d', { alpha: false });
   if (!ctx) return;
 
@@ -2489,7 +2569,7 @@ const moveNodeDown = useCallback((nodeId: string) => {
     ctx.fillText(displayText, baseX, centerY);
 
     // 🖼️ إدارة الصورة حسب مستوى التفصيل
-    if (detailLevel !== 'minimal' && detailLevel !== 'basic' && node.imageUrl) {
+    if (detailLevel !== 'minimal' && detailLevel !== 'basic') {
       // حساب حجم الصورة حسب الزوم
       let imageBoxW = 80 * Math.min(viewState.zoom, 1.2); // حد أقصى للتكبير
       let imageBoxH = 60 * Math.min(viewState.zoom, 1.2);
@@ -2512,8 +2592,8 @@ const moveNodeDown = useCallback((nodeId: string) => {
         
         ctx.drawImage(img, imageBoxX, imageBoxY, imageBoxW, imageBoxH);
         ctx.globalAlpha = 1.0; // إعادة تعيين الشفافية
-      } else if (detailLevel === 'detailed' || detailLevel === 'ultra-detailed') {
-        // Placeholder فقط في التفاصيل العالية
+      } else {
+        // Placeholder إذا لم تكن هناك صورة
         ctx.fillStyle = '#f1f5f9';
         ctx.fillRect(imageBoxX, imageBoxY, imageBoxW, imageBoxH);
         
@@ -2521,17 +2601,17 @@ const moveNodeDown = useCallback((nodeId: string) => {
         ctx.fillStyle = '#94a3b8';
         ctx.font = `400 ${Math.max(12, 16 * Math.min(viewState.zoom, 1.0))}px "Inter"`;
         ctx.textAlign = 'center';
-        ctx.fillText('📷', imageBoxX + imageBoxW/2, imageBoxY + imageBoxH/2);
+        ctx.fillText('', imageBoxX + imageBoxW/2, imageBoxY + imageBoxH/2);
       }
 
-      // حفظ الـ hit-rect مع الأحجام المحدثة
+      // حفظ الـ hit-rect مع الأحجام المحدثة (دائماً، حتى لو placeholder)
       imageHitRectsRef.current.push({
         nodeId: node.id,
         x: imageBoxX,
         y: imageBoxY,
         w: imageBoxW,
         h: imageBoxH,
-        url: node.imageUrl || '',
+        url: node.imageUrl
       });
     }
 
@@ -2539,6 +2619,9 @@ const moveNodeDown = useCallback((nodeId: string) => {
   }, 
   [CANVAS_CONFIG, viewState.zoom, getCachedImage, getDetailLevel]
 );
+
+  
+  const statsClickAreasRef = useRef<Array<{ nodeId: string; x: number; y: number; width: number; height: number }>>([]);
 
 
   // دالة رسم إحصائيات المهام
@@ -2597,6 +2680,24 @@ const moveNodeDown = useCallback((nodeId: string) => {
     ctx.arc(statsX - 8, centerY, dotSize, 0, Math.PI * 2);
     ctx.fill();
   }
+
+  const statsClickArea = {
+  x: statsX - 15,
+  y: centerY - statsHeight/2 - 5,
+  width: statsWidth + 20,
+  height: statsHeight + 10
+};
+
+
+// حفظ منطقة النقر (أضف ref جديد)
+if (!statsClickAreasRef.current) {
+  statsClickAreasRef.current = [];
+}
+statsClickAreasRef.current.push({
+  nodeId: node.id,
+  ...statsClickArea
+});
+
   
   ctx.restore();
 }, [CANVAS_CONFIG, viewState.zoom, getDetailLevel]);
@@ -2720,6 +2821,7 @@ const moveNodeDown = useCallback((nodeId: string) => {
   const mouseX = e.clientX - rect.left;
   const mouseY = e.clientY - rect.top;
 
+  
   // إخفاء قائمة السياق إذا كانت مفتوحة
   if (contextMenu?.visible) {
     setContextMenu(null);
@@ -2780,11 +2882,11 @@ const moveNodeDown = useCallback((nodeId: string) => {
   
 
   
+  const flattened = flattenTree(hierarchyTree);
   // إذا كان النقر في منطقة المهام (وليس في الشريط الجانبي)
   if (mouseX >= effectiveLeftPanelWidth) {
     
     // البحث عن المهمة المنقورة
-    const flattened = flattenTree(hierarchyTree);
     let clickedTask: Task | null = null;
     let clickedNode: HierarchyNode | null = null;
 
@@ -2903,14 +3005,11 @@ const moveNodeDown = useCallback((nodeId: string) => {
       
       if (clickedTask.type === 'milestone') {
         const size = CANVAS_CONFIG.milestoneSize * 1.5 * viewState.zoom;
-        const milestoneY = taskY + scaledTaskHeight / 2;
-        const centerX = taskX;
-        
         const moveZoneWidth = size * 0.4;
 
-        if (mouseX < centerX - moveZoneWidth / 2) {
+        if (mouseX < taskX - moveZoneWidth / 2) {
           dragType = 'resize-left';
-        } else if (mouseX > centerX + moveZoneWidth / 2) {
+        } else if (mouseX > taskX + moveZoneWidth / 2) {
           dragType = 'resize-right';
         } else {
           dragType = 'move';
@@ -2967,6 +3066,28 @@ const moveNodeDown = useCallback((nodeId: string) => {
           
     return;
   }
+
+  if (!sidebarCollapsed && mouseX < effectiveLeftPanelWidth) {
+  // فحص النقر على منطقة الإحصائيات
+  for (const area of statsClickAreasRef.current) {
+    if (mouseX >= area.x && mouseX <= area.x + area.width &&
+        mouseY >= area.y && mouseY <= area.y + area.height) {
+      
+      const clickedNode = flattened.find(n => n.id === area.nodeId);
+      if (clickedNode) {
+        const allTasks = collectAllTasks(clickedNode);
+        setTasksSummaryModal({
+          isOpen: true,
+          node: clickedNode,
+          allTasks
+        });
+        return;
+      }
+    }
+  }
+}
+
+  
 
   // معالجة النقرات في الشريط الجانبي (إذا لم يكن مطوي)
   if (!sidebarCollapsed && mouseY >= CANVAS_CONFIG.headerHeight) {
@@ -3110,7 +3231,7 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
 
           const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
           
-          // استخدم نفس الحساب الجديد
+          // استخدم الحساب الجديد
           const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
           const taskY = node.yPosition + (CANVAS_CONFIG.taskPadding * viewState.zoom) + 
                         (task.row || 0) * rowSpacing;
@@ -3507,7 +3628,7 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
       const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
       
       // استخدم نفس الحساب الجديد
-     const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
+      const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
       const taskY = node.yPosition + (CANVAS_CONFIG.taskPadding * viewState.zoom) + 
                     (task.row || 0) * rowSpacing;
         
@@ -3870,142 +3991,6 @@ const applyTemplateToNode = useCallback((template: any, dropX: number, dropY: nu
 
 
   useEffect(() => {
-  const handleDrop = (e: DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    const taskData = e.dataTransfer?.getData('task');
-    if (!taskData) return;
-    
-    try {
-      const task = JSON.parse(taskData);
-      const rect = canvasRef.current?.getBoundingClientRect();
-      
-      if (rect) {
-        const dropX = e.clientX - rect.left;
-        const dropY = e.clientY - rect.top;
-        
-        addNewTaskToTree(task, dropX, dropY);
-        
-        if (onTaskDrop) {
-          onTaskDrop(task);
-        }
-      }
-    } catch (error) {
-      console.error('خطأ في معالجة المهمة المسحوبة:', error);
-    }
-  };
-
-  const handleDragOver = (e: DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer!.dropEffect = 'copy';
-  };
-  
-  const handleDragEnter = (e: DragEvent) => {
-    e.preventDefault();
-    if (canvasRef.current) {
-      canvasRef.current.style.backgroundColor = 'rgba(59, 130, 246, 0.05)';
-    }
-  };
-  
-  const handleDragLeave = (e: DragEvent) => {
-    e.preventDefault();
-    if (canvasRef.current) {
-      canvasRef.current.style.backgroundColor = '';
-    }
-  };
-
-  const canvas = canvasRef.current;
-  if (canvas) {
-    canvas.addEventListener('drop', handleDrop);
-    canvas.addEventListener('dragover', handleDragOver);
-    canvas.addEventListener('dragenter', handleDragEnter);
-    canvas.addEventListener('dragleave', handleDragLeave);
-    
-    return () => {
-      canvas.removeEventListener('drop', handleDrop);
-      canvas.removeEventListener('dragover', handleDragOver);
-      canvas.removeEventListener('dragenter', handleDragEnter);
-      canvas.removeEventListener('dragleave', handleDragLeave);
-    };
-  }
-}, [addNewTaskToTree, onTaskDrop]);
-
-
-  // 6. أضف useEffect للبحث والفلترة:
-  useEffect(() => {
-    if (!searchQuery || searchQuery.trim() === '') {
-      setFilteredTree(hierarchyTree);
-      return;
-    }
-    
-    const filterTree = (nodes: HierarchyNode[]): HierarchyNode[] => {
-      return nodes.map(node => {
-        const filteredTasks = node.tasks.filter(task =>
-          task.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          task.author?.toLowerCase().includes(searchQuery.toLowerCase())
-        );
-        
-        const filteredChildren = filterTree(node.children);
-        
-        const hasMatchingContent = node.content.toLowerCase().includes(searchQuery.toLowerCase());
-        const hasMatchingTasks = filteredTasks.length > 0;
-        const hasMatchingChildren = filteredChildren.some(child => 
-          child.tasks.length > 0 || child.children.length > 0
-        );
-        
-        if (hasMatchingContent || hasMatchingTasks || hasMatchingChildren) {
-          return { ...node, tasks: filteredTasks, children: filteredChildren };
-        }
-        
-        return { ...node, tasks: [], children: [] };
-      }).filter(node => 
-        node.tasks.length > 0 || 
-        node.children.length > 0 ||
-        node.content.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    };
-    
-    setFilteredTree(filterTree(hierarchyTree));
-  }, [searchQuery, hierarchyTree]);
-
-  // 7. تصدير الدوال للاستخدام الخارجي:
-  useEffect(() => {
-    if (window) {
-      (window as any).ganttActions = {
-        deleteSelectedTasks,
-        linkSelectedTasks,
-        addNewTaskToTree
-      };
-    }
-  }, [deleteSelectedTasks, linkSelectedTasks, addNewTaskToTree]);
-
-
-
-  // في بداية GanttCanvas component
-  useEffect(() => {
-    if (searchQuery) {
-      // فلترة المهام المعروضة بناءً على البحث
-      const filtered = hierarchyTree.map(node => ({
-        ...node,
-        tasks: node.tasks.filter(task =>
-          task.content.toLowerCase().includes(searchQuery.toLowerCase())
-        )
-      }));
-      // تطبيق الفلترة على الرسم
-    }
-  }, [searchQuery]);
-
-  // للتعامل مع المهام المحددة
-  useEffect(() => {
-    if (selectedTaskIds && selectedTaskIds.length > 0) {
-      // تمييز المهام المحددة بإطار أزرق أو لون مختلف
-    }
-  }, [selectedTaskIds]);
-  
-
-
-  useEffect(() => {
   const canvas = canvasRef.current;
   if (!canvas) return;
 
@@ -4022,7 +4007,7 @@ const applyTemplateToNode = useCallback((template: any, dropX: number, dropY: nu
       for (let i = imageHitRectsRef.current.length - 1; i >= 0; i--) {
         const r = imageHitRectsRef.current[i];
         if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
-          setPopupImage(r.url);
+          setPopupImage({ nodeId: r.nodeId, url: r.url });
           break;
         }
       }
@@ -4033,6 +4018,36 @@ const applyTemplateToNode = useCallback((template: any, dropX: number, dropY: nu
   return () => canvas.removeEventListener('click', onClick);
 }, [handleTimeAxisButtonClick, CANVAS_CONFIG.leftPanelWidth, CANVAS_CONFIG.headerHeight]);
 
+
+
+  // دالة لتحديث imageUrl للعقدة
+  const updateNodeImage = useCallback((nodeId: string, newImageUrl: string) => {
+    setHierarchyTree(prev => {
+      const updateInTree = (nodes: HierarchyNode[]): HierarchyNode[] => {
+        return nodes.map(node => {
+          if (node.id === nodeId) {
+            return { ...node, imageUrl: newImageUrl };
+          }
+          return { ...node, children: updateInTree(node.children) };
+        });
+      };
+      return updateInTree(prev);
+    });
+  }, []);
+
+  // معالج رفع الصورة
+  const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>, nodeId: string) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const newUrl = event.target?.result as string;
+        updateNodeImage(nodeId, newUrl);
+        setPopupImage({ nodeId, url: newUrl });
+      };
+      reader.readAsDataURL(file);
+    }
+  }, [updateNodeImage]);
 
 
 
@@ -4133,6 +4148,81 @@ useEffect(() => {
 }, [addNewTaskToTree, applyTemplateToNode, onTaskDrop]);
 
 
+  // 6. أضف useEffect للبحث والفلترة:
+  useEffect(() => {
+    if (!searchQuery || searchQuery.trim() === '') {
+      setFilteredTree(hierarchyTree);
+      return;
+    }
+    
+    const filterTree = (nodes: HierarchyNode[]): HierarchyNode[] => {
+      return nodes.map(node => {
+        const filteredTasks = node.tasks.filter(task =>
+          task.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          task.author?.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+        
+        const filteredChildren = filterTree(node.children);
+        
+        const hasMatchingContent = node.content.toLowerCase().includes(searchQuery.toLowerCase());
+        const hasMatchingTasks = filteredTasks.length > 0;
+        const hasMatchingChildren = filteredChildren.some(child => 
+          child.tasks.length > 0 || child.children.length > 0
+        );
+        
+        if (hasMatchingContent || hasMatchingTasks || hasMatchingChildren) {
+          return { ...node, tasks: filteredTasks, children: filteredChildren };
+        }
+        
+        return { ...node, tasks: [], children: [] };
+      }).filter(node => 
+        node.tasks.length > 0 || 
+        node.children.length > 0 ||
+        node.content.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    };
+    
+    setFilteredTree(filterTree(hierarchyTree));
+  }, [searchQuery, hierarchyTree]);
+
+  // 7. تصدير الدوال للاستخدام الخارجي:
+  useEffect(() => {
+    if (window) {
+      (window as any).ganttActions = {
+        deleteSelectedTasks,
+        linkSelectedTasks,
+        addNewTaskToTree
+      };
+    }
+  }, [deleteSelectedTasks, linkSelectedTasks, addNewTaskToTree]);
+
+
+  useEffect(() => {
+    if (searchQuery) {
+      // فلترة المهام المعروضة بناءً على البحث
+      const filtered = hierarchyTree.map(node => ({
+        ...node,
+        tasks: node.tasks.filter(task =>
+          task.content.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+      }));
+      // تطبيق الفلترة على الرسم
+    }
+  }, [searchQuery]);
+
+  // للتعامل مع المهام المحددة
+  useEffect(() => {
+    if (selectedTaskIds && selectedTaskIds.length > 0) {
+      // تمييز المهام المحددة بإطار أزرق أو لون مختلف
+    }
+  }, [selectedTaskIds]);
+  
+  useEffect(() => {
+  if (onSelectedTasksChange) {
+    onSelectedTasksChange(selectedTasks);
+  }
+}, [selectedTasks, onSelectedTasksChange]);
+
   return (
     <div className="flex-1 flex flex-col bg-white">
     
@@ -4187,7 +4277,7 @@ useEffect(() => {
                 defaultValue={targetTask.content}
                 className="absolute bg-white border-2 border-blue-500 rounded px-2 py-1 text-sm z-50"
                 style={{
-                  left: `${taskX - 2}px`, // تعديل الموضع قليلاً
+                  left: `${taskX - 2}px`, // تعديل الموضع
                   top: `${taskY - 2}px`,
                   width: `${Math.max(100, taskWidth + 4)}px`, // زيادة العرض قليلاً
                   height: `${scaledTaskHeight + 4}px`, // زيادة الارتفاع قليلاً
@@ -4335,20 +4425,64 @@ useEffect(() => {
 )}
 
 
+{popupImage && (() => {
+  const flattened = flattenTree(hierarchyTree);
+  const targetNode = flattened.find(n => n.id === popupImage.nodeId);
+  
+  const handleEditClick = () => {
+    // فتح file input لرفع صورة جديدة
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const newUrl = event.target?.result as string;
+          updateNodeImage(popupImage.nodeId, newUrl);
+          setPopupImage({ nodeId: popupImage.nodeId, url: newUrl });
+        };
+        reader.readAsDataURL(file);
+      }
+    };
+    input.click();
+  };
 
-        {popupImage && (
-          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
-            <div className="bg-white rounded-xl p-3 shadow-xl relative max-w-[90vw] max-h-[90vh]">
-              <button
-                onClick={() => setPopupImage(null)}
-                className="absolute top-2 right-2 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-sm"
-              >
-                إغلاق
-              </button>
-              <img src={popupImage} alt="node" className="max-w-[85vw] max-h-[80vh] object-contain" />
-            </div>
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
+      <div className="bg-white rounded-xl p-3 shadow-xl relative max-w-[90vw] max-h-[90vh]">
+        {/* أيقونة إغلاق X */}
+        <button
+          onClick={() => setPopupImage(null)}
+          className="absolute top-2 right-2 p-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-800"
+        >
+          ✕
+        </button>
+        
+        {/* أيقونة تعديل */}
+        <button
+          onClick={handleEditClick}
+          className="absolute top-2 left-2 p-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-800"
+        >
+          ✎
+        </button>
+        
+        {popupImage.url ? (
+          <img 
+            src={popupImage.url} 
+            alt="node" 
+            className="max-w-[85vw] max-h-[80vh] object-contain" 
+          />
+        ) : (
+          <div className="flex items-center justify-center h-[300px] w-[400px] bg-gray-100 text-gray-600">
+            إمكانية رفع صورة جديدة لهذا القسم
           </div>
         )}
+      </div>
+    </div>
+  );
+})()}
 
 
         {editingNodeId && (() => {
@@ -4401,6 +4535,18 @@ useEffect(() => {
             />
           );
         })()}
+
+
+        {/* Tasks Summary Modal */}
+        {tasksSummaryModal.isOpen && tasksSummaryModal.node && (
+          <TasksSummaryModal
+            isOpen={tasksSummaryModal.isOpen}
+            onClose={() => setTasksSummaryModal({ isOpen: false, node: null, allTasks: [] })}
+            node={tasksSummaryModal.node}
+            allTasks={tasksSummaryModal.allTasks}
+            onUpdateTaskProgress={handleUpdateTaskProgress}
+          />
+        )} 
 
 
       </div>
