@@ -52,6 +52,32 @@ export interface Task {
 
 }
 
+export interface HistoryAction {
+  id: string;
+  type: 'ADD_TASK' | 'DELETE_TASK' | 'UPDATE_TASK' | 'MOVE_TASK' | 
+        'ADD_LINK' | 'DELETE_LINK' | 'ADD_NODE' | 'DELETE_NODE' | 
+        'UPDATE_NODE' | 'DUPLICATE_TASK' | 'BULK_DELETE' | 'BULK_ADD';
+  timestamp: Date;
+  data: {
+    before?: any;
+    after?: any;
+    nodeId?: string;
+    taskId?: string;
+    tasks?: {
+        task: Task;
+        nodeId: string;
+    }[];
+    links?: TaskLink[];
+  };
+}
+
+export interface HistoryState {
+  past: HistoryAction[];
+  future: HistoryAction[];
+  currentAction: HistoryAction | null;
+}
+
+
 export interface TaskLink {
   id: string;
   sourceTaskId: string;
@@ -150,6 +176,14 @@ export const GanttCanvas: React.FC<GanttCanvasProps> = ({
 
   const hierarchyTree = externalHierarchyTree || localHierarchyTree;
   const setHierarchyTree = externalSetHierarchyTree || setLocalHierarchyTree;
+
+  const [history, setHistory] = useState<HistoryState>({
+    past: [],
+    future: [],
+    currentAction: null
+  });
+
+  const MAX_HISTORY_SIZE = 50; // حد أقصى للتاريخ
 
 
 
@@ -281,7 +315,13 @@ export const GanttCanvas: React.FC<GanttCanvasProps> = ({
   const PROJECT_START_DATE = useMemo(() => new Date('2025-08-14'), []);
   const PROJECT_END_DATE = useMemo(() => new Date('2025-09-14'), []);
 
-  const scaledDayWidth = useMemo(() => CANVAS_CONFIG.dayWidth * viewState.zoom, [CANVAS_CONFIG.dayWidth, viewState.zoom]);
+  const scaledDayWidth = useMemo(() => {
+    const baseWidth = timeAxisMode === 'weeks' 
+      ? CANVAS_CONFIG.dayWidth * 0.2  // في وضع الأسابيع، اليوم يأخذ 20% من العرض الأصلي
+      : CANVAS_CONFIG.dayWidth;
+    return baseWidth * viewState.zoom;
+  }, [CANVAS_CONFIG.dayWidth, viewState.zoom, timeAxisMode]);
+
   const scaledRowHeight = useMemo(() => CANVAS_CONFIG.rowHeight * viewState.zoom, [CANVAS_CONFIG.rowHeight, viewState.zoom]);
 
   const scaledTaskHeight = useMemo(() => {
@@ -383,6 +423,224 @@ const findNodeInTree = useCallback((nodes: HierarchyNode[], nodeId: string): Hie
   }
   return null;
 }, []);
+
+
+
+const addToHistory = useCallback((action: Omit<HistoryAction, 'id' | 'timestamp'>) => {
+  const newAction: HistoryAction = {
+    ...action,
+    id: `history-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    timestamp: new Date()
+  };
+  
+  setHistory(prev => {
+    const newPast = [...prev.past, newAction].slice(-MAX_HISTORY_SIZE);
+    return {
+      past: newPast,
+      future: [], // مسح المستقبل عند إضافة عملية جديدة
+      currentAction: newAction
+    };
+  });
+}, []);
+
+
+const performUndo = useCallback(() => {
+  if (history.past.length === 0) {
+    console.log('لا توجد عمليات للتراجع عنها');
+    return;
+  }
+  
+  const lastAction = history.past[history.past.length - 1];
+  
+  setHistory(prev => ({
+    past: prev.past.slice(0, -1),
+    future: [lastAction, ...prev.future],
+    currentAction: prev.past[prev.past.length - 2] || null
+  }));
+  
+  // تنفيذ عكس العملية
+  switch (lastAction.type) {
+    case 'ADD_TASK':
+      if (lastAction.data.taskId && lastAction.data.nodeId) {
+        // حذف المهمة المضافة
+        setHierarchyTree(prev => {
+          const removeTask = (nodes: HierarchyNode[]): HierarchyNode[] => {
+            return nodes.map(node => ({
+              ...node,
+              tasks: node.id === lastAction.data.nodeId 
+                ? node.tasks.filter(t => t.id !== lastAction.data.taskId)
+                : node.tasks,
+              children: removeTask(node.children)
+            }));
+          };
+          return removeTask(prev);
+        });
+      }
+      break;
+      
+    case 'DELETE_TASK':
+      if (lastAction.data.before && lastAction.data.nodeId) {
+        // استرجاع المهمة المحذوفة
+        const deletedTask = lastAction.data.before as Task;
+        setHierarchyTree(prev => {
+          const addTask = (nodes: HierarchyNode[]): HierarchyNode[] => {
+            return nodes.map(node => ({
+              ...node,
+              tasks: node.id === lastAction.data.nodeId 
+                ? [...node.tasks, deletedTask]
+                : node.tasks,
+              children: addTask(node.children)
+            }));
+          };
+          return addTask(prev);
+        });
+      }
+      break;
+      
+    case 'UPDATE_TASK':
+      if (lastAction.data.before && lastAction.data.nodeId && lastAction.data.taskId) {
+        // استرجاع الحالة السابقة للمهمة
+        const previousTask = lastAction.data.before as Task;
+        setHierarchyTree(prev => {
+          const updateTask = (nodes: HierarchyNode[]): HierarchyNode[] => {
+            return nodes.map(node => ({
+              ...node,
+              tasks: node.id === lastAction.data.nodeId 
+                ? node.tasks.map(t => t.id === lastAction.data.taskId ? previousTask : t)
+                : node.tasks,
+              children: updateTask(node.children)
+            }));
+          };
+          return updateTask(prev);
+        });
+      }
+      break;
+      
+    case 'BULK_DELETE':
+      if (lastAction.data.before) {
+        // استرجاع جميع المهام المحذوفة
+        const deletedTasks = lastAction.data.before as Array<{ task: Task; nodeId: string }>;
+        setHierarchyTree(prev => {
+          const restoreTasks = (nodes: HierarchyNode[]): HierarchyNode[] => {
+            return nodes.map(node => {
+              const tasksToRestore = deletedTasks
+                .filter(({ nodeId }) => nodeId === node.id)
+                .map(({ task }) => task);
+              
+              return {
+                ...node,
+                tasks: [...node.tasks, ...tasksToRestore],
+                children: restoreTasks(node.children)
+              };
+            });
+          };
+          return restoreTasks(prev);
+        });
+      }
+      break;
+      
+    // يمكنك إضافة المزيد من الحالات حسب الحاجة
+  }
+  
+  console.log('تم التراجع عن:', lastAction.type);
+}, [history.past]);
+
+const performRedo = useCallback(() => {
+  if (history.future.length === 0) {
+    console.log('لا توجد عمليات للإعادة');
+    return;
+  }
+  
+  const nextAction = history.future[0];
+  
+  setHistory(prev => ({
+    past: [...prev.past, nextAction],
+    future: prev.future.slice(1),
+    currentAction: nextAction
+  }));
+  
+  // إعادة تنفيذ العملية
+  switch (nextAction.type) {
+    case 'ADD_TASK':
+      if (nextAction.data.after && nextAction.data.nodeId) {
+        const taskToAdd = nextAction.data.after as Task;
+        setHierarchyTree(prev => {
+          const addTask = (nodes: HierarchyNode[]): HierarchyNode[] => {
+            return nodes.map(node => ({
+              ...node,
+              tasks: node.id === nextAction.data.nodeId 
+                ? [...node.tasks, taskToAdd]
+                : node.tasks,
+              children: addTask(node.children)
+            }));
+          };
+          return addTask(prev);
+        });
+      }
+      break;
+      
+    case 'DELETE_TASK':
+      if (nextAction.data.taskId && nextAction.data.nodeId) {
+        setHierarchyTree(prev => {
+          const removeTask = (nodes: HierarchyNode[]): HierarchyNode[] => {
+            return nodes.map(node => ({
+              ...node,
+              tasks: node.id === nextAction.data.nodeId 
+                ? node.tasks.filter(t => t.id !== nextAction.data.taskId)
+                : node.tasks,
+              children: removeTask(node.children)
+            }));
+          };
+          return removeTask(prev);
+        });
+      }
+      break;
+      
+    case 'UPDATE_TASK':
+      if (nextAction.data.after && nextAction.data.nodeId && nextAction.data.taskId) {
+        const updatedTask = nextAction.data.after as Task;
+        setHierarchyTree(prev => {
+          const updateTask = (nodes: HierarchyNode[]): HierarchyNode[] => {
+            return nodes.map(node => ({
+              ...node,
+              tasks: node.id === nextAction.data.nodeId 
+                ? node.tasks.map(t => t.id === nextAction.data.taskId ? updatedTask : t)
+                : node.tasks,
+              children: updateTask(node.children)
+            }));
+          };
+          return updateTask(prev);
+        });
+      }
+      break;
+      
+    case 'BULK_DELETE':
+      if (nextAction.data.tasks) {
+        const tasksToDelete = nextAction.data.tasks as Array<{ task: Task; nodeId: string }>;
+        setHierarchyTree(prev => {
+          const deleteTasks = (nodes: HierarchyNode[]): HierarchyNode[] => {
+            return nodes.map(node => {
+              const taskIdsToDelete = new Set(
+                tasksToDelete
+                  .filter(({ nodeId }) => nodeId === node.id)
+                  .map(({ task }) => task.id)
+              );
+              
+              return {
+                ...node,
+                tasks: node.tasks.filter(t => !taskIdsToDelete.has(t.id)),
+                children: deleteTasks(node.children)
+              };
+            });
+          };
+          return deleteTasks(prev);
+        });
+      }
+      break;
+  }
+  
+  console.log('تم إعادة:', nextAction.type);
+}, [history.future]);
 
   // دوال التحكم بالشجرة في وضع التحرير
   const addNodeToTree = useCallback((parentId: string | null, position: 'before' | 'after' | 'inside') => {
@@ -670,6 +928,35 @@ const findNodeInTree = useCallback((nodes: HierarchyNode[], nodeId: string): Hie
 
   // أضف هذه الدالة لحذف مهمة واحدة:
   const deleteTask = useCallback((taskId: string, nodeId: string) => {
+    // احفظ المهمة قبل الحذف
+    const taskToDelete = hierarchyTree
+      .flatMap(node => {
+        const findTask = (n: HierarchyNode): Task | undefined => {
+          if (n.id === nodeId) {
+            return n.tasks.find(t => t.id === taskId);
+          }
+          for (const child of n.children) {
+            const found = findTask(child);
+            if (found) return found;
+          }
+          return undefined;
+        };
+        return findTask(node);
+      })
+      .find(t => t !== undefined);
+    
+    if (taskToDelete) {
+      // سجل العملية في التاريخ
+      addToHistory({
+        type: 'DELETE_TASK',
+        data: {
+          before: taskToDelete,
+          taskId,
+          nodeId
+        }
+      });
+    }
+    
     setHierarchyTree(prev => {
       const removeTaskFromTree = (nodes: HierarchyNode[]): HierarchyNode[] => {
         return nodes.map(node => {
@@ -688,7 +975,6 @@ const findNodeInTree = useCallback((nodes: HierarchyNode[], nodeId: string): Hie
       return removeTaskFromTree(prev);
     });
     
-    // إزالة من التحديد المتعدد
     setSelectedTasks(prev => {
       const newMap = new Map(prev);
       newMap.delete(taskId);
@@ -696,11 +982,24 @@ const findNodeInTree = useCallback((nodes: HierarchyNode[], nodeId: string): Hie
     });
     
     console.log('تم حذف المهمة');
-  }, []);
+  }, [hierarchyTree, addToHistory]);
+
 
   // أضف هذه الدالة لحذف المهام المحددة:
   const deleteSelectedTasksMulti = useCallback(() => {
     if (selectedTasks.size === 0) return;
+    
+
+    const tasksToDelete = Array.from(selectedTasks.values());
+
+    // سجل العملية في التاريخ
+    addToHistory({
+      type: 'BULK_DELETE',
+      data: {
+        before: tasksToDelete,
+        tasks: tasksToDelete
+      }
+    });
     
     setHierarchyTree(prev => {
       const removeTasksFromTree = (nodes: HierarchyNode[]): HierarchyNode[] => {
@@ -846,20 +1145,18 @@ const findNodeInTree = useCallback((nodes: HierarchyNode[], nodeId: string): Hie
     return flattened;
   }, [expandedNodes, calculateNodeHeight, CANVAS_CONFIG.headerHeight, viewState.offsetY]);
 
+
   const getTaskConnectionPoints = useCallback((task: Task, node: HierarchyNode) => {
   const effectiveLeftPanelWidth = getEffectiveLeftPanelWidth();
   
-  const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1;
-  const displayStartDay = task.startDay * scaleFactor;
-  const displayDuration = task.duration * scaleFactor;
+  // لا نحتاج scale factor هنا لأن scaledDayWidth يتعامل معه
+  const taskX = effectiveLeftPanelWidth + viewState.offsetX + task.startDay * scaledDayWidth;
   
-  // استخدام نفس حساب taskY المحدث
   const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
   const baseY = (node.yPosition || 0) + (CANVAS_CONFIG.taskPadding * viewState.zoom) + 
                 (task.row || 0) * rowSpacing;
   
   if (task.type === 'milestone') {
-    const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
     const taskY = baseY + scaledTaskHeight / 2;
     const size = CANVAS_CONFIG.milestoneSize * viewState.zoom;
 
@@ -868,8 +1165,7 @@ const findNodeInTree = useCallback((nodes: HierarchyNode[], nodeId: string): Hie
       end: { x: taskX + size / 2, y: taskY }
     };
   } else {
-    const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
-    const taskWidth = displayDuration * scaledDayWidth;
+    const taskWidth = task.duration * scaledDayWidth;
     const taskY = baseY + scaledTaskHeight / 2;
 
     return {
@@ -877,7 +1173,7 @@ const findNodeInTree = useCallback((nodes: HierarchyNode[], nodeId: string): Hie
       end: { x: taskX + taskWidth, y: taskY }
     };
   }
-}, [CANVAS_CONFIG, scaledDayWidth, scaledTaskHeight, viewState.offsetX, viewState.zoom, getEffectiveLeftPanelWidth, timeAxisMode]);
+}, [CANVAS_CONFIG, scaledDayWidth, scaledTaskHeight, viewState.offsetX, viewState.zoom, getEffectiveLeftPanelWidth]);
 
 
   // Add new ref for delete buttons hit areas
@@ -1093,9 +1389,7 @@ const calculateAdjustedDuration = (startDay: number, originalDuration: number, t
       }
       
       let day = Math.floor((dropX - effectiveLeftPanelWidth - viewState.offsetX) / scaledDayWidth);
-      if (timeAxisMode === 'weeks') {
-        day *= 5;
-      }
+      
       
       let startDay = findNextWorkDay(day, getTotalProjectDays());
 
@@ -1117,6 +1411,15 @@ const calculateAdjustedDuration = (startDay: number, originalDuration: number, t
           type: duration === 0 ? 'milestone' : 'task'
       };
       
+      addToHistory({
+        type: 'ADD_TASK',
+        data: {
+          after: finalTask,
+          taskId: finalTask.id,
+          nodeId: targetNode?.id
+        }
+      });
+
       setHierarchyTree(prev => {
           const updateNodeInTree = (nodes: HierarchyNode[]): HierarchyNode[] => {
               return nodes.map(node => {
@@ -1441,7 +1744,7 @@ const calculateAdjustedDuration = (startDay: number, originalDuration: number, t
   }
   ctx.restore();
   
-  }, [CANVAS_CONFIG, viewState.zoom, treeEditMode , sidebarCollapsed , viewState.offsetY]);
+  }, [CANVAS_CONFIG, viewState.zoom, treeEditMode , sidebarCollapsed , viewState.offsetY, timeAxisMode]);
   
     // دالة رسم المحور الزمني المحسن
     const drawEnhancedTimeAxis = useCallback((ctx: CanvasRenderingContext2D, rect: DOMRect, visibleStartDay: number, visibleEndDay: number, effectiveLeftPanelWidth: number) => {
@@ -1563,17 +1866,34 @@ const drawCanvas = useCallback(() => {
     ctx.strokeStyle = '#e5e7eb';
     ctx.lineWidth = 1.5;
     
-    // خطوط الأيام العمودية
-    for (let day = visibleStartDay; day <= visibleEndDay; day++) {
-      const x = effectiveLeftPanelWidth + viewState.offsetX + day * scaledDayWidth;
-      if (x >= Math.max(effectiveLeftPanelWidth, projectStartX) && 
-          x <= Math.min(rect.width, projectEndX)) {
-        ctx.beginPath();
-        ctx.moveTo(x, actualWorkAreaTop);
-        ctx.lineTo(x, adjustedWorkAreaBottom);
-        ctx.stroke();
-      }
+
+    // خطوط عمودية - تتكيف مع وضع الأسابيع
+    if (timeAxisMode === 'weeks') {
+        // رسم خط لكل أسبوع
+        for (let week = Math.floor(visibleStartDay / 7); week <= Math.ceil(visibleEndDay / 7); week++) {
+            const x = effectiveLeftPanelWidth + viewState.offsetX + (week * 7 * scaledDayWidth);
+            if (x >= Math.max(effectiveLeftPanelWidth, projectStartX) && 
+                x <= Math.min(rect.width, projectEndX)) {
+                ctx.beginPath();
+                ctx.moveTo(x, actualWorkAreaTop);
+                ctx.lineTo(x, adjustedWorkAreaBottom);
+                ctx.stroke();
+            }
+        }
+    } else {
+        // رسم خط لكل يوم في وضع الأيام
+        for (let day = visibleStartDay; day <= visibleEndDay; day++) {
+            const x = effectiveLeftPanelWidth + viewState.offsetX + day * scaledDayWidth;
+            if (x >= Math.max(effectiveLeftPanelWidth, projectStartX) && 
+                x <= Math.min(rect.width, projectEndX)) {
+                ctx.beginPath();
+                ctx.moveTo(x, actualWorkAreaTop);
+                ctx.lineTo(x, adjustedWorkAreaBottom);
+                ctx.stroke();
+            }
+        }
     }
+    
     
     // خطوط الصفوف الأفقية (فقط الفواصل بين الأقسام مع تغميقها)
     flattened.forEach(node => {
@@ -1670,11 +1990,8 @@ const drawCanvas = useCallback(() => {
             displayTask = taskDragState.task;
           }
 
-          const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1;
-          const displayStartDay = displayTask.startDay * scaleFactor;
-          const displayDuration = displayTask.duration * scaleFactor;
-
-          const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
+          // لا نحتاج scaleFactor - نستخدم scaledDayWidth مباشرة
+          const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayTask.startDay * scaledDayWidth;
           const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
           const taskY = nodeY + (CANVAS_CONFIG.taskPadding * viewState.zoom) + 
                         (displayTask.row || 0) * rowSpacing;
@@ -1682,7 +1999,7 @@ const drawCanvas = useCallback(() => {
           // التحقق مما إذا كانت المهمة محددة
           const isSelected = selectedTasks.has(displayTask.id);
 
-          // رسم المعالم (إذا كانت مفعلة)
+          // رسم المعالم
           if (displayTask.type === 'milestone' && showMilestones) {
             const baseSize = CANVAS_CONFIG.milestoneSize * 1.5;
             const size = baseSize * viewState.zoom;
@@ -1816,7 +2133,8 @@ const drawCanvas = useCallback(() => {
 
           // رسم المهام العادية
           else if (displayTask.type !== 'milestone' || !showMilestones) {
-            const taskWidth = displayDuration * scaledDayWidth;
+                const taskWidth = displayTask.duration * scaledDayWidth;
+
 
             if (taskX + taskWidth >= effectiveLeftPanelWidth && taskX <= rect.width) {
               const isBeingDragged = taskDragState.isDragging && taskDragState.task?.id === displayTask.id;
@@ -1955,34 +2273,30 @@ const drawCanvas = useCallback(() => {
             ctx.lineWidth = 2;
             ctx.setLineDash([]);
 
-            // استخدم نفس الحسابات الجديدة للإحداثيات
-            const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1;
-            const displayStartDay = displayTask.startDay * scaleFactor;
-            const displayDuration = displayTask.duration * scaleFactor;
-
-            const currentTaskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
+            // استخدم task الأصلية للإطار، وليس displayTask
+            const frameTask = isBeingDragged && taskDragState.task ? taskDragState.task : task;
             
-            // استخدم الحساب الجديد لـ Y
+            const frameX = effectiveLeftPanelWidth + viewState.offsetX + frameTask.startDay * scaledDayWidth;
             const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
-            const currentTaskY = nodeY + (CANVAS_CONFIG.taskPadding * viewState.zoom) + 
-                                (displayTask.row || 0) * rowSpacing;
+            const frameY = nodeY + (CANVAS_CONFIG.taskPadding * viewState.zoom) + 
+                          (frameTask.row || 0) * rowSpacing;
 
-            if (displayTask.type === 'milestone') {
+            if (frameTask.type === 'milestone') {
               const baseSize = CANVAS_CONFIG.milestoneSize * 1.5;
               const size = baseSize * viewState.zoom;
-              const milestoneY = currentTaskY + scaledTaskHeight / 2;
+              const milestoneY = frameY + scaledTaskHeight / 2;
 
               ctx.beginPath();
-              ctx.arc(currentTaskX, milestoneY, (size / 2) + 2, 0, Math.PI * 2);
+              ctx.arc(frameX, milestoneY, (size / 2) + 2, 0, Math.PI * 2);
               ctx.stroke();
             } else {
-              const currentTaskWidth = displayDuration * scaledDayWidth;
+              const frameWidth = frameTask.duration * scaledDayWidth;
 
               ctx.beginPath();
               ctx.roundRect(
-                currentTaskX - 1,
-                currentTaskY - 1,
-                currentTaskWidth + 2,
+                frameX - 1,
+                frameY - 1,
+                frameWidth + 2,
                 scaledTaskHeight + 2,
                 CANVAS_CONFIG.taskBorderRadius
               );
@@ -2273,58 +2587,62 @@ const moveNodeDown = useCallback((nodeId: string) => {
     }, [CANVAS_CONFIG, dayToDate, scaledDayWidth, viewState.offsetX]);
 
     // دالة رسم محور الأسابيع
+    
     const drawWeeksAxis = useCallback((ctx: CanvasRenderingContext2D, rect: DOMRect, visibleStartDay: number, visibleEndDay: number, effectiveLeftPanelWidth: number) => {
-        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        const weekWidth = scaledDayWidth * 5; // عرض الأسبوع
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    
+    // عرض الأسبوع الفعلي بناءً على scaledDayWidth
+    const weekWidth = scaledDayWidth * 7; // 7 أيام في الأسبوع
+    
+    // حساب الأسابيع المرئية
+    const firstWeek = Math.floor(visibleStartDay / 7);
+    const lastWeek = Math.ceil(visibleEndDay / 7);
+    
+    for (let week = firstWeek; week <= lastWeek; week++) {
+        const weekStartDay = week * 7;
+        const x = effectiveLeftPanelWidth + viewState.offsetX + weekStartDay * scaledDayWidth;
         
-        // حساب الأسبوع الأول والأخير المرئيين
-        const firstWeekStart = Math.floor(visibleStartDay / 5) * 5;
-        const lastWeekStart = Math.floor(visibleEndDay / 5) * 5;
-        
-        for (let weekStart = firstWeekStart; weekStart <= lastWeekStart; weekStart += 5) {
-            const x = effectiveLeftPanelWidth + viewState.offsetX + weekStart * scaledDayWidth;
-            if (x + weekWidth >= effectiveLeftPanelWidth && x <= rect.width) {
-                const startDate = dayToDate(weekStart);
-                const endDate = dayToDate(weekStart + 4);
-                
-                // خلفية الأسبوع
-                ctx.fillStyle = weekStart % 14 === 0 ? 'rgba(248, 250, 252, 0.8)' : 'rgba(241, 245, 249, 0.5)';
-                ctx.fillRect(x, 0, weekWidth, CANVAS_CONFIG.headerHeight);
-                
-                // رقم الأسبوع
-                const weekNumber = Math.floor(weekStart / 5) + 1;
-                ctx.fillStyle = '#374151';
+        if (x + weekWidth >= effectiveLeftPanelWidth && x <= rect.width) {
+            const startDate = dayToDate(weekStartDay);
+            const endDate = dayToDate(Math.min(weekStartDay + 6, getTotalProjectDays() - 1));
+            
+            // خلفية الأسبوع
+            ctx.fillStyle = week % 2 === 0 ? 'rgba(248, 250, 252, 0.8)' : 'rgba(241, 245, 249, 0.5)';
+            ctx.fillRect(x, 0, weekWidth, CANVAS_CONFIG.headerHeight);
+            
+            // رقم الأسبوع
+            ctx.fillStyle = '#374151';
+            ctx.font = '600 12px "Segoe UI", "Arial", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`W${week + 1}`, x + weekWidth / 2, CANVAS_CONFIG.headerHeight - 20);
+            
+            // تاريخ بداية ونهاية الأسبوع
+            ctx.fillStyle = '#6b7280';
+            ctx.font = '400 9px "Segoe UI", "Arial", sans-serif';
+            const dateRange = `${startDate.getDate()}/${startDate.getMonth() + 1} - ${endDate.getDate()}/${endDate.getMonth() + 1}`;
+            ctx.fillText(dateRange, x + weekWidth / 2, CANVAS_CONFIG.headerHeight - 8);
+            
+            // الشهر والسنة
+            if (startDate.getDate() <= 7 || week === firstWeek) {
+                ctx.fillStyle = '#1e293b';
                 ctx.font = '600 12px "Segoe UI", "Arial", sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(`W${weekNumber}`, x + weekWidth / 2, CANVAS_CONFIG.headerHeight - 20);
-                
-                // تاريخ بداية ونهاية الأسبوع
-                ctx.fillStyle = '#6b7280';
-                ctx.font = '400 9px "Segoe UI", "Arial", sans-serif';
-                const dateRange = `${startDate.getDate()}/${startDate.getMonth() + 1} - ${endDate.getDate()}/${endDate.getMonth() + 1}`;
-                ctx.fillText(dateRange, x + weekWidth / 2, CANVAS_CONFIG.headerHeight - 8);
-                
-                // الشهر والسنة (في بداية كل شهر أو الأسبوع المرئي الأول)
-                if (startDate.getDate() <= 7 || weekStart === firstWeekStart) {
-                    ctx.fillStyle = '#1e293b';
-                    ctx.font = '600 12px "Segoe UI", "Arial", sans-serif';
-                    const monthText = `${monthNames[startDate.getMonth()]} ${startDate.getFullYear()}`;
-                    ctx.fillText(monthText, x + weekWidth / 2, 15);
-                }
-                
-                // خطوط فاصلة بين الأسابيع
-                if (weekStart > firstWeekStart) {
-                    ctx.strokeStyle = '#e2e8f0';
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    ctx.moveTo(x, 0);
-                    ctx.lineTo(x, CANVAS_CONFIG.headerHeight);
-                    ctx.stroke();
-                }
+                const monthText = `${monthNames[startDate.getMonth()]} ${startDate.getFullYear()}`;
+                ctx.fillText(monthText, x + weekWidth / 2, 15);
+            }
+            
+            // خطوط فاصلة بين الأسابيع
+            if (week > firstWeek) {
+                ctx.strokeStyle = '#e2e8f0';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, CANVAS_CONFIG.headerHeight);
+                ctx.stroke();
             }
         }
-    }, [CANVAS_CONFIG, dayToDate, scaledDayWidth, viewState.offsetX]);
+    }
+}, [CANVAS_CONFIG, dayToDate, scaledDayWidth, viewState.offsetX, getTotalProjectDays]);
 
   // إضافة دالة للحصول على مستويات التفصيل حسب الزوم
   const getDetailLevel = useCallback((zoom: number) => {
@@ -2885,8 +3203,6 @@ statsClickAreasRef.current.push({
   const flattened = flattenTree(hierarchyTree);
   // إذا كان النقر في منطقة المهام (وليس في الشريط الجانبي)
   if (mouseX >= effectiveLeftPanelWidth) {
-    
-    // البحث عن المهمة المنقورة
     let clickedTask: Task | null = null;
     let clickedNode: HierarchyNode | null = null;
 
@@ -2896,13 +3212,8 @@ statsClickAreasRef.current.push({
       const nodeY = node.yPosition;
       
       for (const task of node.tasks) {
-        const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1;
-        const displayStartDay = task.startDay * scaleFactor;
-        const displayDuration = task.duration * scaleFactor;
-
-        const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
-        
-        // استخدم نفس الحساب الجديد
+        // حساب موقع المهمة مباشرة
+        const taskX = effectiveLeftPanelWidth + viewState.offsetX + task.startDay * scaledDayWidth;
         const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
         const taskY = node.yPosition + (CANVAS_CONFIG.taskPadding * viewState.zoom) + 
                       (task.row || 0) * rowSpacing;
@@ -2919,7 +3230,7 @@ statsClickAreasRef.current.push({
             break;
           }
         } else {
-          const taskWidth = displayDuration * scaledDayWidth;
+          const taskWidth = task.duration * scaledDayWidth;
           
           if (mouseX >= taskX && mouseX <= taskX + taskWidth && 
               mouseY >= taskY && mouseY <= taskY + scaledTaskHeight) {
@@ -2934,33 +3245,33 @@ statsClickAreasRef.current.push({
     }
 
     // معالجة المهام المنقورة
-    if (clickedTask && clickedNode && isLinkMode && showLinks) {
-      // وضع إنشاء الروابط
-      const points = getTaskConnectionPoints(clickedTask, clickedNode);
-      const distanceToStart = Math.sqrt(Math.pow(mouseX - points.start.x, 2) + Math.pow(mouseY - points.start.y, 2));
-      const distanceToEnd = Math.sqrt(Math.pow(mouseX - points.end.x, 2) + Math.pow(mouseY - points.end.y, 2));
-      
-      const connectionPoint = distanceToStart < distanceToEnd ? 'start' : 'end';
+   if (clickedTask && clickedNode && isLinkMode && showLinks) {
+    // وضع إنشاء الروابط
+    const points = getTaskConnectionPoints(clickedTask, clickedNode);
+    const distanceToStart = Math.sqrt(Math.pow(mouseX - points.start.x, 2) + Math.pow(mouseY - points.start.y, 2));
+    const distanceToEnd = Math.sqrt(Math.pow(mouseX - points.end.x, 2) + Math.pow(mouseY - points.end.y, 2));
+    
+    const connectionPoint = distanceToStart < distanceToEnd ? 'start' : 'end';
 
-      if (linkState.isCreating && linkState.sourceTask && linkState.sourcePoint) {
-        createLink(linkState.sourceTask, linkState.sourcePoint, clickedTask, connectionPoint, clickedNode.id);
-        setLinkState({
-          isCreating: false,
-          sourceTask: null,
-          sourcePoint: null,
-          mouseX: 0,
-          mouseY: 0
-        });
-      } else {
-        setLinkState({
-          isCreating: true,
-          sourceTask: clickedTask,
-          sourcePoint: connectionPoint,
-          mouseX,
-          mouseY
-        });
-      }
-    } else if (clickedTask && clickedNode && !isLinkMode) {
+    if (linkState.isCreating && linkState.sourceTask && linkState.sourcePoint) {
+      createLink(linkState.sourceTask, linkState.sourcePoint, clickedTask, connectionPoint, clickedNode.id);
+      setLinkState({
+        isCreating: false,
+        sourceTask: null,
+        sourcePoint: null,
+        mouseX: 0,
+        mouseY: 0
+      });
+    } else {
+      setLinkState({
+        isCreating: true,
+        sourceTask: clickedTask,
+        sourcePoint: connectionPoint,
+        mouseX,
+        mouseY
+      });
+    }
+  } else if (clickedTask && clickedNode && !isLinkMode) {
       
       if (onTaskSelected) {
         onTaskSelected(clickedTask, clickedNode.id);
@@ -2996,10 +3307,11 @@ statsClickAreasRef.current.push({
 
       // وضع سحب المهام
       const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1;
-      const displayStartDay = clickedTask.startDay * scaleFactor;
 
-      const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
-      const taskY = clickedNode.yPosition! + CANVAS_CONFIG.taskPadding + (clickedTask.row || 0) * (scaledTaskHeight + CANVAS_CONFIG.taskPadding);
+      const taskX = effectiveLeftPanelWidth + viewState.offsetX + clickedTask.startDay * scaledDayWidth;
+      const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
+      const taskY = clickedNode.yPosition! + (CANVAS_CONFIG.taskPadding * viewState.zoom) + 
+                    (clickedTask.row || 0) * rowSpacing;
       
       let dragType: 'move' | 'resize-left' | 'resize-right' = 'move';
       
@@ -3015,9 +3327,9 @@ statsClickAreasRef.current.push({
           dragType = 'move';
         }
       } else {
-        const displayDuration = clickedTask.duration * scaleFactor;
-        const taskWidth = displayDuration * scaledDayWidth;
+        const taskWidth = clickedTask.duration * scaledDayWidth;
         const resizeZone = Math.min(20, taskWidth * 0.2);
+        
         if (mouseX - taskX < resizeZone) {
           dragType = 'resize-left';
         } else if (taskX + taskWidth - mouseX < resizeZone) {
@@ -3225,13 +3537,8 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
         if (!node.isLeaf || !node.tasks || !node.yPosition) continue;
         
         for (const task of node.tasks) {
-          const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1;
-          const displayStartDay = task.startDay * scaleFactor;
-          const displayDuration = task.duration * scaleFactor;
-
-          const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
-          
-          // استخدم الحساب الجديد
+          // حساب موقع المهمة مباشرة
+          const taskX = effectiveLeftPanelWidth + viewState.offsetX + task.startDay * scaledDayWidth;
           const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
           const taskY = node.yPosition + (CANVAS_CONFIG.taskPadding * viewState.zoom) + 
                         (task.row || 0) * rowSpacing;
@@ -3245,13 +3552,28 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
             const dy = Math.abs(mouseY - milestoneY);
             isHovering = dx <= size / 2 && dy <= size / 2;
           } else {
-            const taskWidth = displayDuration * scaledDayWidth;
+            const taskWidth = task.duration * scaledDayWidth;
             isHovering = mouseX >= taskX && mouseX <= taskX + taskWidth && 
                         mouseY >= taskY && mouseY <= taskY + scaledTaskHeight;
           }
           
           if (isHovering) {
             hoveredTask = { task, node };
+            
+            // تحديد نوع المؤشر
+            if (task.type !== 'milestone') {
+              const taskWidth = task.duration * scaledDayWidth;
+              const resizeZone = Math.min(20, taskWidth * 0.2);
+              
+              if (mouseX - taskX < resizeZone || taskX + taskWidth - mouseX < resizeZone) {
+                canvas.style.cursor = 'col-resize';
+              } else {
+                canvas.style.cursor = 'grab';
+              }
+            } else {
+              canvas.style.cursor = 'grab';
+            }
+            
             break;
           }
         }
@@ -3293,61 +3615,66 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
     
     if (taskDragState.isDragging && taskDragState.task && taskDragState.originalTask) {
       e.preventDefault();
-      
+
       const deltaX = mouseX - taskDragState.startMouseX;
       const deltaY = mouseY - taskDragState.startMouseY;
-      
-      const scaleFactor = timeAxisMode === 'weeks' ? 5 : 1;
-      const daysDelta = (deltaX / scaledDayWidth) * scaleFactor;
-      
+
+      const daysDelta = deltaX / scaledDayWidth; // إزالة التقريب لجعل الحركة سلسة
+
       // حساب rowsDelta بناءً على rowSpacing الجديد
       const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
-      const rowsDelta = deltaY / rowSpacing;
+      const rowsDelta = deltaY / rowSpacing; // إزالة التقريب للحركة السلسة
 
       let newTask = { ...taskDragState.originalTask };
       const totalDays = getTotalProjectDays();
+      const projectStartDay = 0; // بداية المشروع
+      const projectEndDay = totalDays - 1; // نهاية المشروع
 
       if (taskDragState.type === 'move') {
+        // تحريك المهمة بأكملها
         newTask.startDay = taskDragState.originalTask.startDay + daysDelta;
-        newTask.startDay = Math.max(0, Math.min(totalDays - newTask.duration, newTask.startDay));
+        newTask.startDay = Math.max(projectStartDay, Math.min(projectEndDay - newTask.duration + 1, newTask.startDay));
         newTask.row = Math.max(0, (taskDragState.originalTask.row || 0) + rowsDelta);
       } else if (taskDragState.type === 'resize-left') {
-          let newStartDay = taskDragState.originalTask.startDay + daysDelta;
-          let rawDuration = taskDragState.originalTask.duration - (newStartDay - taskDragState.originalTask.startDay);
-          newTask.startDay = newStartDay;
-          newTask.duration = rawDuration;
-          
-        } else if (taskDragState.type === 'resize-right') {
-          let rawDuration = taskDragState.originalTask.duration + daysDelta;
-          newTask.duration = rawDuration;
+        // تعديل الطرف الأيسر فقط
+        let newStartDay = taskDragState.originalTask.startDay + daysDelta;
+        newTask.startDay = Math.max(projectStartDay, newStartDay); // منع التجاوز لبداية المشروع
+        // إبقاء endDay ثابتًا عن طريق تعديل duration
+        let newEndDay = taskDragState.originalTask.startDay + taskDragState.originalTask.duration - 1;
+        newTask.duration = Math.max(1, newEndDay - newTask.startDay + 1); // ضمان مدة لا تقل عن يوم
+        // منع endDay من التجاوز
+        if (newTask.startDay + newTask.duration - 1 > projectEndDay) {
+          newTask.startDay = projectEndDay - newTask.duration + 1;
         }
-
-        // تغيير النوع مؤقتاً للعرض
-        if (newTask.duration > 0 && newTask.type === 'milestone') {
-          newTask.type = 'task';
-        } else if (newTask.duration <= 0 && newTask.type === 'task') {
-          newTask.type = 'milestone';
-          newTask.duration = 0;
+      } else if (taskDragState.type === 'resize-right') {
+        // تعديل الطرف الأيمن فقط
+        let newEndDay = taskDragState.originalTask.startDay + taskDragState.originalTask.duration - 1 + daysDelta;
+        newEndDay = Math.min(projectEndDay, newEndDay); // منع التجاوز لنهاية المشروع
+        newTask.duration = Math.max(1, newEndDay - newTask.startDay + 1); // ضمان مدة لا تقل عن يوم
+        // إبقاء startDay ثابتًا
+        if (newTask.startDay + newTask.duration - 1 > projectEndDay) {
+          newTask.duration = projectEndDay - newTask.startDay + 1;
         }
-
-        // حد أدنى للمهام
-        if (newTask.type === 'task') {
-          newTask.duration = Math.max(1, newTask.duration);
-          if (taskDragState.type === 'resize-left') {
-            newTask.startDay = Math.min(newTask.startDay, taskDragState.originalTask.startDay + taskDragState.originalTask.duration - 1);
-          }
-        }
-
-        // ضمان البقاء في حدود المشروع
-        newTask.startDay = Math.max(0, newTask.startDay);
-        if (newTask.type === 'task') {
-          newTask.startDay = Math.min(newTask.startDay, totalDays - newTask.duration);
-        } else {
-          newTask.startDay = Math.min(newTask.startDay, totalDays - 1);
-        }
-
-        setTaskDragState(prev => ({ ...prev, task: newTask }));
       }
+
+      // تغيير النوع مؤقتًا للعرض
+      if (newTask.duration > 0 && newTask.type === 'milestone') {
+        newTask.type = 'task';
+      } else if (newTask.duration <= 0 && newTask.type === 'task') {
+        newTask.type = 'milestone';
+        newTask.duration = 0;
+      }
+
+      // ضمان البقاء في حدود المشروع
+      newTask.startDay = Math.max(projectStartDay, newTask.startDay);
+      if (newTask.type === 'task') {
+        newTask.startDay = Math.min(newTask.startDay, projectEndDay - newTask.duration + 1);
+      } else {
+        newTask.startDay = Math.min(newTask.startDay, projectEndDay);
+      }
+
+      setTaskDragState(prev => ({ ...prev, task: newTask }));
+    }
     else if (viewState.isDragging) {
       setViewState(prev => ({
         ...prev,
@@ -3368,7 +3695,7 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
     } else {
       // تحديث نوع المؤشر
       canvas.style.cursor = 'default';
-      
+
       if (mouseX < effectiveLeftPanelWidth && !sidebarCollapsed) {
         canvas.style.cursor = 'pointer';
       } else if (isLinkMode && showLinks) {
@@ -3382,13 +3709,8 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
           if (!node.isLeaf || !node.tasks || !node.yPosition) continue;
           
           for (const task of node.tasks) {
-            const scaleFactor = timeAxisMode === 'weeks' ? 0.2 : 1;
-            const displayStartDay = task.startDay * scaleFactor;
-            const displayDuration = task.duration * scaleFactor;
-
-            const taskX = effectiveLeftPanelWidth + viewState.offsetX + displayStartDay * scaledDayWidth;
-            
-            // استخدم الحساب الجديد
+            // حساب موقع المهمة مباشرة بدون scaleFactor
+            const taskX = effectiveLeftPanelWidth + viewState.offsetX + task.startDay * scaledDayWidth;
             const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
             const taskY = node.yPosition + (CANVAS_CONFIG.taskPadding * viewState.zoom) + 
                           (task.row || 0) * rowSpacing;
@@ -3402,9 +3724,8 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
               if (dx <= size / 2 && dy <= size / 2) {
                 // تحديد cursor بناءً على الموقع داخل المعلم
                 const moveZoneWidth = size * 0.4;
-                const centerX = taskX;
                 
-                if (mouseX < centerX - moveZoneWidth / 2 || mouseX > centerX + moveZoneWidth / 2) {
+                if (mouseX < taskX - moveZoneWidth / 2 || mouseX > taskX + moveZoneWidth / 2) {
                   canvas.style.cursor = 'col-resize';
                 } else {
                   canvas.style.cursor = 'grab';
@@ -3413,7 +3734,7 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
                 break;
               }
             } else {
-              const taskWidth = displayDuration * scaledDayWidth;
+              const taskWidth = task.duration * scaledDayWidth;
               
               if (mouseX >= taskX && mouseX <= taskX + taskWidth && 
                   mouseY >= taskY && mouseY <= taskY + scaledTaskHeight) {
@@ -3559,6 +3880,19 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
       };
       return updateTaskInTree(prev);
     });
+
+    if (taskDragState.originalTask && finalTask) {
+      addToHistory({
+        type: 'UPDATE_TASK',
+        data: {
+          before: taskDragState.originalTask,
+          after: finalTask,
+          taskId: finalTask.id,
+          nodeId: taskDragState.nodeId
+        }
+      });
+    }
+
   }
 
   // معالجة انتهاء سحب الشبكة
@@ -3883,6 +4217,19 @@ const applyTemplateToNode = useCallback((template: any, dropX: number, dropY: nu
   // أضف معالجات اختصارات لوحة المفاتيح:
   useEffect(() => {
   const handleKeyDown = (e: KeyboardEvent) => {
+
+    // Ctrl+Z للتراجع
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      performUndo();
+    }
+    
+    // Ctrl+Shift+Z أو Ctrl+Y للإعادة
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+      e.preventDefault();
+      performRedo();
+    }
+
     // Ctrl+A لتحديد الكل
     if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
       e.preventDefault();
