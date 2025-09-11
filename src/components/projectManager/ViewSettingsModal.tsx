@@ -13,7 +13,8 @@ import {
   Clock,
   Palette,
   Settings,
-  MousePointer2
+  MousePointer2,
+  RotateCcw
 } from 'lucide-react';
 
 export interface ViewSettings {
@@ -38,10 +39,6 @@ interface ViewSettingsModalProps {
   onSettingsChange: (settings: ViewSettings) => void;
 }
 
-interface SettingGroup {
-  settings: SettingItem[];
-}
-
 interface SettingItem {
   key: keyof ViewSettings;
   label: string;
@@ -49,78 +46,67 @@ interface SettingItem {
   dependent?: keyof ViewSettings;
 }
 
-const settingsGroups: SettingGroup[] = [
+const allSettings: SettingItem[] = [
   {
-    settings: [
-      {
-        key: 'showLinks',
-        label: 'إظهار الروابط',
-        icon: Link2
-      },
-      {
-        key: 'isLinkMode',
-        label: 'وضع ربط المهام',
-        icon: Target,
-        dependent: 'showLinks'
-      }
-    ]
+    key: 'showLinks',
+    label: 'إظهار الروابط',
+    icon: Link2
   },
   {
-    settings: [
-      {
-        key: 'showGrid',
-        label: 'إظهار الشبكة',
-        icon: Grid3X3
-      },
-      {
-        key: 'showWeekends',
-        label: 'تمييز عطل الأسبوع',
-        icon: Calendar
-      }
-    ]
+    key: 'isLinkMode',
+    label: 'وضع ربط المهام',
+    icon: Target,
+    dependent: 'showLinks'
   },
   {
-    settings: [
-      {
-        key: 'showProgress',
-        label: 'إظهار التقدم',
-        icon: BarChart3
-      },
-      {
-        key: 'showHoverTask',
-        label: 'التقدم عند التمرير',
-        icon: MousePointer2,
-      },
-      {
-        key: 'showAuthors',
-        label: 'إظهار المؤلفين',
-        icon: Users
-      },
-      {
-        key: 'showMilestones',
-        label: 'إظهار المعالم',
-        icon: Target
-      }
-    ]
+    key: 'showGrid',
+    label: 'إظهار الشبكة',
+    icon: Grid3X3
   },
   {
-    settings: [
-      {
-        key: 'showColors',
-        label: 'ألوان الحالة',
-        icon: Palette
-      },
-      {
-        key: 'showTodayLine',
-        label: 'إظهار اليوم الحالي',
-        icon: Calendar
-      },
-      {
-        key: 'showTimestamps',
-        label: 'إظهار الطوابع الزمنية',
-        icon: Clock
-      }
-    ]
+    key: 'showWeekends',
+    label: 'تمييز عطل الأسبوع',
+    icon: Calendar
+  },
+  {
+    key: 'showProgress',
+    label: 'إظهار التقدم',
+    icon: BarChart3
+  },
+  {
+    key: 'showHoverTask',
+    label: 'التقدم عند التمرير',
+    icon: MousePointer2,
+  },
+  {
+    key: 'showAuthors',
+    label: 'إظهار المؤلفين',
+    icon: Users
+  },
+  {
+    key: 'showMilestones',
+    label: 'إظهار المعالم',
+    icon: Target
+  },
+  {
+    key: 'showColors',
+    label: 'ألوان الحالة',
+    icon: Palette
+  },
+  {
+    key: 'showTodayLine',
+    label: 'إظهار اليوم الحالي',
+    icon: Calendar
+  },
+  {
+    key: 'showTimestamps',
+    label: 'إظهار الطوابع الزمنية',
+    icon: Clock
+  },
+  {
+    key: 'showTaskIds',
+    label: 'إظهار معرفات المهام',
+    icon: Eye
   }
 ];
 
@@ -130,8 +116,6 @@ export const ViewSettingsModal: React.FC<ViewSettingsModalProps> = ({
   settings,
   onSettingsChange
 }) => {
-  if (!isOpen) return null;
-
   const handleSettingChange = (key: keyof ViewSettings, value: boolean) => {
     const newSettings = { ...settings, [key]: value };
     
@@ -150,154 +134,161 @@ export const ViewSettingsModal: React.FC<ViewSettingsModalProps> = ({
     return false;
   };
 
+  const handleResetToDefaults = () => {
+    const defaultSettings: ViewSettings = {
+      showLinks: true,
+      isLinkMode: false,
+      showGrid: true,
+      showWeekends: true,
+      showProgress: true,
+      showAuthors: true,
+      showMilestones: true,
+      showTimestamps: false,
+      showColors: true,
+      showTaskIds: false,
+      showTodayLine: false,
+      showHoverTask: false
+    };
+    onSettingsChange(defaultSettings);
+  };
+
   return (
-    <div className="fixed inset-0 bg-white/20 backdrop-blur-md flex items-center justify-center z-50 p-4">
-      <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden border border-white/30">
+    <div className={`
+      fixed top-14 right-0 h-[calc(100vh-3.5rem)] w-80 z-40
+      bg-white shadow-xl border-l border-gray-200
+      transition-transform duration-300 ease-in-out
+      ${isOpen ? 'translate-x-0' : 'translate-x-full'}
+    `}>
+      <div className="flex flex-col h-full">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-200/60 bg-gradient-to-r from-slate-50/80 to-slate-100/60">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <Settings className="text-slate-600" size={20} />
-              <h3 className="text-lg font-semibold text-slate-900">إعدادات العرض</h3>
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-slate-100 rounded-lg transition-all duration-200 group"
-            >
-              <X size={18} className="text-slate-500 group-hover:text-slate-700" />
-            </button>
+        <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
+          <div className="flex items-center space-x-3">
+            <Settings className="text-gray-600" size={20} />
+            <h3 className="text-lg font-semibold text-gray-900">إعدادات العرض</h3>
           </div>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
+          >
+            <X size={18} className="text-gray-500" />
+          </button>
         </div>
 
-        {/* Content */}
-        <div className="p-6 max-h-[calc(90vh-160px)] overflow-y-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {settingsGroups.map((group, groupIndex) => (
-              <div key={groupIndex} className="space-y-4">
-                {/* Settings Items */}
-                <div className="space-y-3">
-                  {group.settings.map((setting) => {
-                    const isDisabled = isSettingDisabled(setting);
-                    const isActive = settings[setting.key];
-                    const IconComponent = setting.icon;
+        {/* Settings List */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {allSettings.map((setting) => {
+            const isDisabled = isSettingDisabled(setting);
+            const isActive = settings[setting.key];
+            const IconComponent = setting.icon;
 
-                    return (
-                      <div
-                        key={setting.key}
-                        className={`bg-slate-50/70 rounded-xl p-4 transition-all duration-200 border border-slate-200/50 ${
-                          isDisabled ? 'opacity-50' : 'hover:bg-slate-100/60 hover:border-slate-300/60 hover:shadow-sm'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-3 flex-1">
-                            <div className={`p-2.5 rounded-xl transition-all duration-200 shadow-sm border ${
-                              isActive && !isDisabled
-                                ? 'bg-gradient-to-br from-slate-600 to-slate-700 text-white border-slate-600'
-                                : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                            }`}>
-                              <IconComponent size={18} />
-                            </div>
-                            
-                            <div className="flex-1">
-                              <div className="flex items-center space-x-2">
-                                <h4 className="font-medium text-slate-900 text-base">
-                                  {setting.label}
-                                </h4>
-                                {setting.dependent && (
-                                  <span className="text-xs bg-amber-50 text-amber-700 px-2.5 py-1 rounded-full font-medium border border-amber-200">
-                                    يتطلب {settingsGroups
-                                      .flatMap(g => g.settings)
-                                      .find(s => s.key === setting.dependent)?.label}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
+            return (
+              <div
+                key={setting.key}
+                className={`
+                  bg-gray-50 rounded-lg p-3 transition-all duration-200 border border-gray-200
+                  ${isDisabled ? 'opacity-50' : 'hover:bg-gray-100 hover:border-gray-300'}
+                `}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3 flex-1">
+                    <div className={`
+                      p-2 rounded-lg transition-all duration-200 border
+                      ${isActive && !isDisabled
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-500 border-gray-200'
+                      }
+                    `}>
+                      <IconComponent size={16} />
+                    </div>
+                    
+                    <div className="flex-1">
+                      <div className="flex flex-col">
+                        <h4 className="font-medium text-gray-900 text-sm">
+                          {setting.label}
+                        </h4>
+                        {setting.dependent && (
+                          <span className="text-xs text-amber-600 mt-1">
+                            يتطلب {allSettings.find(s => s.key === setting.dependent)?.label}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
 
-                          {/* Enhanced Toggle Switch */}
-                          <div className="flex items-center">
-                            <label className="relative inline-flex items-center cursor-pointer group">
-                              <input
-                                type="checkbox"
-                                checked={isActive}
-                                onChange={(e) => handleSettingChange(setting.key, e.target.checked)}
-                                disabled={isDisabled}
-                                className="sr-only peer"
-                              />
-                              <div className={`
-                                relative w-12 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 
-                                peer-focus:ring-slate-300 peer-focus:ring-opacity-50 rounded-full peer 
-                                transition-all duration-300 border-2 border-slate-300 shadow-inner
-                                ${isActive && !isDisabled ? 
-                                  'peer-checked:bg-gradient-to-r peer-checked:from-slate-600 peer-checked:to-slate-700 peer-checked:border-slate-600 peer-checked:shadow-md' : 
-                                  ''
-                                }
-                                ${isDisabled ? 
-                                  'cursor-not-allowed opacity-50' : 
-                                  'cursor-pointer hover:border-slate-400 group-hover:shadow-sm'
-                                }
-                              `}>
-                                <div className={`
-                                  absolute top-[1px] left-[1px] bg-white rounded-full h-5 w-5 
-                                  transition-all duration-300 shadow-md border border-slate-200
-                                  flex items-center justify-center
-                                  ${isActive ? 
-                                    'translate-x-6 border-slate-300 shadow-lg' : 
-                                    'translate-x-0'
-                                  }
-                                `}>
-                                  {isActive && !isDisabled && (
-                                    <div className="w-2 h-2 bg-slate-600 rounded-full opacity-80"></div>
-                                  )}
-                                </div>
-                              </div>
-                            </label>
-                          </div>
+                  {/* Toggle Switch */}
+                  <div className="flex items-center">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isActive}
+                        onChange={(e) => handleSettingChange(setting.key, e.target.checked)}
+                        disabled={isDisabled}
+                        className="sr-only peer"
+                      />
+                      <div className={`
+                        relative w-10 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer 
+                        transition-all duration-300 border border-gray-300
+                        ${isActive && !isDisabled ? 
+                          'peer-checked:bg-blue-600 peer-checked:border-blue-600' : 
+                          ''
+                        }
+                        ${isDisabled ? 
+                          'cursor-not-allowed opacity-50' : 
+                          'cursor-pointer hover:border-gray-400'
+                        }
+                      `}>
+                        <div className={`
+                          absolute top-[1px] left-[1px] bg-white rounded-full h-4 w-4 
+                          transition-all duration-300 border border-gray-200
+                          ${isActive ? 
+                            'translate-x-5' : 
+                            'translate-x-0'
+                          }
+                        `}>
                         </div>
                       </div>
-                    );
-                  })}
+                    </label>
+                  </div>
                 </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
 
         {/* Footer */}
-        <div className="border-t border-slate-200/60 px-6 py-4 bg-gradient-to-r from-slate-50/80 to-slate-100/60">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <button
-                onClick={() => {
-                  // إعادة تعيين جميع الإعدادات للقيم الافتراضية
-                  const defaultSettings: ViewSettings = {
-                    showLinks: true,
-                    isLinkMode: false,
-                    showGrid: true,
-                    showWeekends: true,
-                    showProgress: true,
-                    showAuthors: true,
-                    showMilestones: true,
-                    showTimestamps: false,
-                    showColors: true,
-                    showTaskIds: false,
-                    showTodayLine: false,
-                    showHoverTask: false
-                  };
-                  onSettingsChange(defaultSettings);
-                }}
-                className="px-4 py-2.5 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-200 rounded-lg transition-all duration-200 border border-slate-300 hover:border-slate-400 hover:shadow-sm"
-              >
-                إعادة تعيين
-              </button>
-              <button
-                onClick={onClose}
-                className="px-6 py-2.5 bg-gradient-to-r from-slate-600 to-slate-700 text-white text-sm font-medium rounded-lg hover:from-slate-700 hover:to-slate-800 transition-all duration-200 shadow-md hover:shadow-lg"
-              >
-                تطبيق الإعدادات
-              </button>
-            </div>
-          </div>
+        <div className={`
+          border-t border-gray-200 p-4 bg-gray-50 space-y-3
+          transition-all duration-700 ease-out
+          ${isOpen ? 
+            'transform translate-y-0 opacity-100' : 
+            'transform translate-y-4 opacity-0'
+          }
+        `}
+        style={{ transitionDelay: isOpen ? `${500 + allSettings.length * 50 + 100}ms` : '0ms' }}
+        >
+          <button
+            onClick={handleResetToDefaults}
+            className={`
+              w-full flex items-center justify-center space-x-2 px-4 py-2.5 text-sm font-medium 
+              text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded-lg 
+              transition-all duration-300 border border-gray-300 hover:border-gray-400
+              hover:shadow-sm transform hover:scale-[1.02]
+            `}
+          >
+            <RotateCcw size={16} />
+            <span>إعادة تعيين للافتراضي</span>
+          </button>
+          
+          <button
+            onClick={onClose}
+            className={`
+              w-full px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg 
+              hover:bg-blue-700 transition-all duration-300
+              hover:shadow-lg transform hover:scale-[1.02] active:scale-[0.98]
+            `}
+          >
+            تطبيق الإعدادات
+          </button>
         </div>
       </div>
     </div>

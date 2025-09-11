@@ -72,7 +72,10 @@ const DraggableTaskItem: React.FC<{
   itemType: 'task' | 'milestone';
   onDragStart: () => void;
   onDragEnd: () => void;
-}> = ({ task, itemType, onDragStart, onDragEnd }) => {
+  handleEditClick?: (e: React.MouseEvent) => void;
+  handleDeleteClick?: (e: React.MouseEvent) => void;
+
+}> = ({ task, itemType, onDragStart, onDragEnd, handleEditClick, handleDeleteClick }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [dragElement, setDragElement] = useState<HTMLElement | null>(null);
 
@@ -140,6 +143,7 @@ const DraggableTaskItem: React.FC<{
     }, 0);
   };
 
+
   const taskData = {
     ...task,
     type: itemType
@@ -181,11 +185,32 @@ const DraggableTaskItem: React.FC<{
         </div>
       ) : (
         <div
-          className="w-full px-2 py-1.5 rounded text-center shadow-sm border border-white/20 transition-all duration-200"
+          className="w-full px-2 py-1.5 rounded shadow-sm border border-white/20 transition-all duration-200 flex items-center justify-between"
           style={{ backgroundColor: task.color }}
         >
-          <div className="text-white text-xs font-medium truncate">
+          {/* اسم المحتوى - أقصى اليسار */}
+          <div className="text-white text-xs font-medium truncate flex-1 text-left mr-2">
             {task.content}
+          </div>
+
+          {/* أزرار التحكم - أقصى اليمين */}
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <button
+              onClick={handleEditClick}
+              className="p-1.5 text-blue-200 hover:text-white hover:bg-white/20 rounded-md transition-colors"
+              title="تعديل"
+            >
+              <Edit3 size={14} />
+            </button>
+            {task.content !== 'بدون شركة' && (
+              <button
+                onClick={handleDeleteClick}
+                className="p-1.5 text-red-200 hover:text-white hover:bg-white/20 rounded-md transition-colors"
+                title="حذف"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -247,39 +272,8 @@ const ManagerCard: React.FC<{
   }
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm hover:shadow-md transition-all duration-200">
-      <div className="flex items-center gap-3">
-        
-        {/* اسم الشركة مع اللون */}
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          <div 
-            className="w-3 h-3 rounded-full flex-shrink-0"
-            style={{ backgroundColor: task.color }}
-          ></div>
-          <span className="text-sm font-medium text-gray-900 truncate">{task.content}</span>
-        </div>
-
-        {/* أزرار التحكم - ثابتة في أقصى اليمين */}
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <button
-            onClick={handleEditClick}
-            className="p-1.5 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors"
-            title="تعديل"
-          >
-            <Edit3 size={14} />
-          </button>
-          {task.content !== 'بدون شركة' && (
-            <button
-              onClick={handleDeleteClick}
-              className="p-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
-              title="حذف"
-            >
-              <Trash2 size={14} />
-            </button>
-          )}
-        </div>
-      </div>
-
+    <div>
+      
       {/* منطقة السحب - تحت اسم الشركة */}
       <div className="mt-3 flex items-center justify-between gap-3">
         
@@ -290,6 +284,9 @@ const ManagerCard: React.FC<{
             itemType="task"
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
+            handleEditClick={handleEditClick}
+            handleDeleteClick={handleDeleteClick}
+
           />
         </div>
 
@@ -695,72 +692,63 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         )}
       </div>   
 
-      {/* نافذة التحذير عند حذف شركة لها مهام */}
-      {showDeleteWarning && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-5 max-w-md w-full mx-4">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
-                <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.96-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="text-base font-semibold text-gray-900">تحذير حذف الشركة</h3>
-                <p className="text-xs text-gray-500">هذا الإجراء لا يمكن التراجع عنه</p>
-              </div>
+     {/* نافذة التحذير المختصرة عند حذف شركة */}
+    {showDeleteWarning && (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg shadow-xl p-4 max-w-sm w-full mx-4">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-6 h-6 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+              <svg className="w-3 h-3 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.96-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
             </div>
-            
-            <div className="mb-5">
-              <p className="text-sm text-gray-700 mb-2">
-                الشركة <strong>"{showDeleteWarning.managerName}"</strong> مرتبطة بـ{' '}
-                <strong>{showDeleteWarning.taskCount}</strong> مهمة في المخطط الزمني.
-              </p>
-              <p className="text-xs text-gray-600">
-                عند حذف هذه الشركة، ستُسند جميع مهامها إلى شركة "بدون شركة" تلقائياً.
-              </p>
-            </div>
-            
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  // إنشاء شركة "بدون شركة" إذا لم تكن موجودة
-                  const unassignedManager = managers.find(m => m.name === 'بدون شركة');
-                  if (!unassignedManager && onAddManager) {
-                    const newUnassignedManager: Manager = {
-                      id: 'unassigned-manager',
-                      name: 'بدون شركة',
-                      color: '#6b7280'
-                    };
-                    onAddManager(newUnassignedManager);
-                  }
-                  
-                  // إعادة إسناد المهام
-                  if (onReassignTasks) {
-                    onReassignTasks(showDeleteWarning.managerId, 'unassigned-manager');
-                  }
-                  
-                  // حذف الشركة
-                  if (onDeleteManager) {
-                    onDeleteManager(showDeleteWarning.managerId);
-                  }
-                  
-                  setShowDeleteWarning(null);
-                }}
-                className="flex-1 bg-red-600 text-white px-3 py-2 rounded-md hover:bg-red-700 transition-colors text-sm font-medium"
-              >
-                نعم، احذف الشركة
-              </button>
-              <button
-                onClick={() => setShowDeleteWarning(null)}
-                className="flex-1 bg-gray-200 text-gray-800 px-3 py-2 rounded-md hover:bg-gray-300 transition-colors text-sm font-medium"
-              >
-                إلغاء
-              </button>
-            </div>
+            <h3 className="text-sm font-semibold text-gray-900">حذف الشركة</h3>
+          </div>
+          
+          <p className="text-sm text-gray-700 mb-4">
+            عند حذف هذه الشركة، ستُسند جميع مهامها إلى شركة "بدون شركة" تلقائياً.
+          </p>
+          
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                // إنشاء شركة "بدون شركة" إذا لم تكن موجودة
+                const unassignedManager = managers.find(m => m.name === 'بدون شركة');
+                if (!unassignedManager && onAddManager) {
+                  const newUnassignedManager: Manager = {
+                    id: 'unassigned-manager',
+                    name: 'بدون شركة',
+                    color: '#6b7280'
+                  };
+                  onAddManager(newUnassignedManager);
+                }
+                
+                // إعادة إسناد المهام
+                if (onReassignTasks) {
+                  onReassignTasks(showDeleteWarning.managerId, 'unassigned-manager');
+                }
+                
+                // حذف الشركة
+                if (onDeleteManager) {
+                  onDeleteManager(showDeleteWarning.managerId);
+                }
+                
+                setShowDeleteWarning(null);
+              }}
+              className="flex-1 bg-red-600 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-red-700 transition-colors"
+            >
+              حذف
+            </button>
+            <button
+              onClick={() => setShowDeleteWarning(null)}
+              className="flex-1 bg-gray-200 text-gray-800 px-3 py-1.5 rounded text-sm font-medium hover:bg-gray-300 transition-colors"
+            >
+              إلغاء
+            </button>
           </div>
         </div>
-      )}
+      </div>
+    )}
 
     </div>
   );

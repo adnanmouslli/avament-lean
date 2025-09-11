@@ -5,7 +5,7 @@ import { GanttCanvas, Task, TaskComment, TaskHistoryEvent } from '@/components/p
 import { ProjectHeader, ActiveTab } from '@/components/projectManager/ProjectHeader';
 import { ProjectSettings, ProjectConfig, DelayReason } from '@/components/projectManager/ProjectSettings';
 import RightSidebar from '@/components/projectManager/RightSidebar';
-import { TreeEditorModal } from '@/components/projectManager/TreeEditorModal';
+import { TreeEditorSidebar } from '@/components/projectManager/TreeEditorModal';
 import { ViewSettingsModal, ViewSettings } from '@/components/projectManager/ViewSettingsModal';
 import { TemplatesSidebar } from '@/components/projectManager/TemplatesSidebar'; // استيراد جديد
 
@@ -812,6 +812,10 @@ const handleReassignTasks = useCallback((oldManagerId: string, newManagerId: str
 }, []);
 
 
+const handleCloseTreeEditor = useCallback(() => {
+    setShowTreeEditor(false);
+  }, []);
+
 
 
 
@@ -972,13 +976,12 @@ const handleReassignTasks = useCallback((oldManagerId: string, newManagerId: str
           <>
             {/* Tree Editor Modal */}
             {showTreeEditor && (
-              <TreeEditorModal
-                isOpen={showTreeEditor}
-                onClose={() => setShowTreeEditor(false)}
+              <TreeEditorSidebar
+                isVisible={showTreeEditor}
+                onClose={handleCloseTreeEditor}
                 hierarchyTree={hierarchyTree}
                 onUpdateTree={handleUpdateTree}
                 onAddSection={addNewSection}
-                onAddTask={addNewTaskToNode}
                 onEditNode={editNodeContent}
                 onDeleteNode={deleteNode}
               />

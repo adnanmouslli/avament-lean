@@ -171,7 +171,7 @@ export const GanttCanvas: React.FC<GanttCanvasProps> = ({
 }) => {
 
   
-
+  
   const [localHierarchyTree, setLocalHierarchyTree] = useState<HierarchyNode[]>([]);
 
   const hierarchyTree = externalHierarchyTree || localHierarchyTree;
@@ -2467,8 +2467,9 @@ const moveNodeDown = useCallback((nodeId: string) => {
   moveNodeInTree(nodeId, nextSibling.id, 'after');
 }, [hierarchyTree, moveNodeInTree]);
 
-  // معالج النقر على أزرار التحكم في وضع التحرير
-  const handleEditControlsClick = useCallback((mouseX: number, mouseY: number, flattened: HierarchyNode[]) => {
+
+
+const handleTextEditClick = useCallback((mouseX: number, mouseY: number, flattened: HierarchyNode[]) => {
   if (!treeEditMode) return false;
   
   for (const node of flattened) {
@@ -2478,59 +2479,39 @@ const moveNodeDown = useCallback((nodeId: string) => {
     const nodeHeight = node.height;
     const centerY = nodeY + Math.min(nodeHeight, scaledRowHeight) / 2;
     
-    const buttonSize = 20;
-    const spacing = 5;
-    let currentX = CANVAS_CONFIG.leftPanelWidth - buttonSize - 10;
-    
-    // زر الحذف
-    if (mouseX >= currentX && mouseX <= currentX + buttonSize &&
-        mouseY >= centerY - buttonSize / 2 && mouseY <= centerY + buttonSize / 2) {
-      deleteNodeFromTree(node.id);
-      return true;
-    }
-    
-    currentX -= (buttonSize + spacing);
-    
-    // زر الإضافة
-    if (mouseX >= currentX && mouseX <= currentX + buttonSize &&
-        mouseY >= centerY - buttonSize / 2 && mouseY <= centerY + buttonSize / 2) {
-      addNodeToTree(node.id, 'inside');
-      return true;
-    }
-    
-    if (node.level > 0) {
-      currentX -= (buttonSize + spacing);
-      
-      // زر التحريك لأعلى
-      if (mouseX >= currentX && mouseX <= currentX + buttonSize &&
-          mouseY >= centerY - buttonSize / 2 && mouseY <= centerY + buttonSize / 2) {
-        moveNodeUp(node.id);
-        return true;
-      }
-      
-      currentX -= (buttonSize + spacing);
-      
-      // زر التحريك لأسفل
-      if (mouseX >= currentX && mouseX <= currentX + buttonSize &&
-          mouseY >= centerY - buttonSize / 2 && mouseY <= centerY + buttonSize / 2) {
-        moveNodeDown(node.id);
-        return true;
-      }
-    }
-    
-    // النقر على نص العقدة للتعديل
+    // تحديد منطقة النص بدقة أكبر لتجنب التداخل مع الصورة
     const indent = 15 + node.level * 25;
-    if (mouseX >= indent + 20 && mouseX <= indent + 140 &&
-        mouseY >= centerY - 12 && mouseY <= centerY + 12) {
-      setEditingNodeId(node.id);
-      setEditingNodeContent(node.content);
-      return true;
+    const textStartX = indent + 20;
+    const textEndX = indent + 140;
+    const textStartY = centerY - 12;
+    const textEndY = centerY + 12;
+    
+    // فحص إذا كان النقر داخل منطقة النص
+    if (mouseX >= textStartX && mouseX <= textEndX &&
+        mouseY >= textStartY && mouseY <= textEndY) {
+      
+      // فحص إضافي: تأكد من أن النقر ليس على منطقة الصورة
+      let clickedOnImage = false;
+      for (const imageRect of imageHitRectsRef.current) {
+        if (imageRect.nodeId === node.id &&
+            mouseX >= imageRect.x && mouseX <= imageRect.x + imageRect.w &&
+            mouseY >= imageRect.y && mouseY <= imageRect.y + imageRect.h) {
+          clickedOnImage = true;
+          break;
+        }
+      }
+      
+      // إذا لم يكن النقر على الصورة، فعّل تحرير النص
+      if (!clickedOnImage) {
+        setEditingNodeId(node.id);
+        setEditingNodeContent(node.content);
+        return true;
+      }
     }
   }
   
   return false;
-}, [treeEditMode, CANVAS_CONFIG, scaledRowHeight, deleteNodeFromTree, addNodeToTree, moveNodeUp, moveNodeDown]);
-
+}, [treeEditMode, scaledRowHeight]);
 
    
     // دالة رسم محور الأيام
@@ -2653,72 +2634,6 @@ const moveNodeDown = useCallback((nodeId: string) => {
     return 'ultra-detailed';                // زوم صغير جداً - عرض كل التفاصيل
   }, []);
 
-  
-  // دالة رسم أزرار التحكم في وضع التحرير
-  const drawEditControls = useCallback((ctx: CanvasRenderingContext2D, node: HierarchyNode, centerY: number) => {
-  const detailLevel = getDetailLevel(viewState.zoom);
-  
-  // إخفاء أزرار التحكم في الزوم الكبير جداً
-  if (detailLevel === 'minimal') return;
-  
-  ctx.save();
-  
-  const buttonSize = Math.max(16, Math.min(24, 20 * Math.min(viewState.zoom, 1.2)));
-  const spacing = Math.max(3, Math.min(8, 5 * viewState.zoom));
-  const fontSize = Math.max(10, Math.min(16, 12 * Math.min(viewState.zoom, 1.2)));
-  
-  let currentX = CANVAS_CONFIG.leftPanelWidth - buttonSize - 10;
-  
-  // زر الحذف
-  ctx.fillStyle = '#ef4444';
-  ctx.beginPath();
-  ctx.roundRect(currentX, centerY - buttonSize / 2, buttonSize, buttonSize, 3);
-  ctx.fill();
-  
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `700 ${fontSize}px sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('×', currentX + buttonSize / 2, centerY);
-  
-  currentX -= (buttonSize + spacing);
-  
-  // زر الإضافة
-  ctx.fillStyle = '#10b981';
-  ctx.beginPath();
-  ctx.roundRect(currentX, centerY - buttonSize / 2, buttonSize, buttonSize, 3);
-  ctx.fill();
-  
-  ctx.fillStyle = '#ffffff';
-  ctx.fillText('+', currentX + buttonSize / 2, centerY);
-  
-  // أزرار التحريك فقط في التفاصيل العادية والعالية
-  if (node.level > 0 && detailLevel !== 'basic') {
-    currentX -= (buttonSize + spacing);
-    
-    // زر التحريك لأعلى
-    ctx.fillStyle = '#6b7280';
-    ctx.beginPath();
-    ctx.roundRect(currentX, centerY - buttonSize / 2, buttonSize, buttonSize, 3);
-    ctx.fill();
-    
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText('↑', currentX + buttonSize / 2, centerY);
-    
-    currentX -= (buttonSize + spacing);
-    
-    // زر التحريك لأسفل
-    ctx.fillStyle = '#6b7280';
-    ctx.beginPath();
-    ctx.roundRect(currentX, centerY - buttonSize / 2, buttonSize, buttonSize, 3);
-    ctx.fill();
-    
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText('↓', currentX + buttonSize / 2, centerY);
-  }
-  
-  ctx.restore();
-}, [CANVAS_CONFIG, viewState.zoom, getDetailLevel]);
 
 
   // دالة رسم خطوط الاتصال
@@ -2922,7 +2837,7 @@ const moveNodeDown = useCallback((nodeId: string) => {
         ctx.fillText('', imageBoxX + imageBoxW/2, imageBoxY + imageBoxH/2);
       }
 
-      // حفظ الـ hit-rect مع الأحجام المحدثة (دائماً، حتى لو placeholder)
+
       imageHitRectsRef.current.push({
         nodeId: node.id,
         x: imageBoxX,
@@ -3085,10 +3000,6 @@ statsClickAreasRef.current.push({
           drawExpandCollapseButton(ctx, node, centerY);
         }
         
-        // أزرار التحكم في وضع التحرير
-        if (treeEditMode) {
-          drawEditControls(ctx, node, centerY);
-        }
         
         // نص العقدة
         if (editingNodeId === node.id) {
@@ -3122,7 +3033,6 @@ statsClickAreasRef.current.push({
     dropPosition,
     drawTreeConnections,
     drawExpandCollapseButton,
-    drawEditControls,
     drawNodeText,
     drawTaskStats,
     getDetailLevel
@@ -3181,7 +3091,7 @@ statsClickAreasRef.current.push({
   // التحقق من النقر على أزرار التحكم في وضع التحرير
   if (treeEditMode && !sidebarCollapsed) {
     const flattened = flattenTree(hierarchyTree);
-    if (handleEditControlsClick(mouseX, mouseY, flattened)) {
+    if (handleTextEditClick(mouseX, mouseY, flattened)) {
       return;
     }
   }
@@ -3461,7 +3371,6 @@ statsClickAreasRef.current.push({
   treeEditMode,
   flattenTree,
   hierarchyTree,
-  handleEditControlsClick,
   handleTimeAxisButtonClick,
   viewState,
   scaledDayWidth,
@@ -3475,7 +3384,8 @@ statsClickAreasRef.current.push({
   selectedTasks,
   setSelectedTasks,
   scaledRowHeight,
-  timeAxisMode
+  timeAxisMode,
+  handleTextEditClick
 ]);
 
 
@@ -3614,67 +3524,82 @@ const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
   
     
     if (taskDragState.isDragging && taskDragState.task && taskDragState.originalTask) {
-      e.preventDefault();
+        e.preventDefault();
 
-      const deltaX = mouseX - taskDragState.startMouseX;
-      const deltaY = mouseY - taskDragState.startMouseY;
+        const deltaX = mouseX - taskDragState.startMouseX;
+        const deltaY = mouseY - taskDragState.startMouseY;
 
-      const daysDelta = deltaX / scaledDayWidth; // إزالة التقريب لجعل الحركة سلسة
+        const daysDelta = deltaX / scaledDayWidth;
 
-      // حساب rowsDelta بناءً على rowSpacing الجديد
-      const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
-      const rowsDelta = deltaY / rowSpacing; // إزالة التقريب للحركة السلسة
+        // حساب rowsDelta بناءً على rowSpacing الجديد
+        const rowSpacing = CANVAS_CONFIG.rowHeight * viewState.zoom;
+        const rowsDelta = deltaY / rowSpacing;
 
-      let newTask = { ...taskDragState.originalTask };
-      const totalDays = getTotalProjectDays();
-      const projectStartDay = 0; // بداية المشروع
-      const projectEndDay = totalDays - 1; // نهاية المشروع
+        let newTask = { ...taskDragState.originalTask };
+        const totalDays = getTotalProjectDays();
+        const projectStartDay = 0;
+        const projectEndDay = totalDays - 1;
 
-      if (taskDragState.type === 'move') {
-        // تحريك المهمة بأكملها
-        newTask.startDay = taskDragState.originalTask.startDay + daysDelta;
-        newTask.startDay = Math.max(projectStartDay, Math.min(projectEndDay - newTask.duration + 1, newTask.startDay));
-        newTask.row = Math.max(0, (taskDragState.originalTask.row || 0) + rowsDelta);
-      } else if (taskDragState.type === 'resize-left') {
-        // تعديل الطرف الأيسر فقط
-        let newStartDay = taskDragState.originalTask.startDay + daysDelta;
-        newTask.startDay = Math.max(projectStartDay, newStartDay); // منع التجاوز لبداية المشروع
-        // إبقاء endDay ثابتًا عن طريق تعديل duration
-        let newEndDay = taskDragState.originalTask.startDay + taskDragState.originalTask.duration - 1;
-        newTask.duration = Math.max(1, newEndDay - newTask.startDay + 1); // ضمان مدة لا تقل عن يوم
-        // منع endDay من التجاوز
-        if (newTask.startDay + newTask.duration - 1 > projectEndDay) {
-          newTask.startDay = projectEndDay - newTask.duration + 1;
+        if (taskDragState.type === 'move') {
+          // تحريك المهمة بأكملها
+          newTask.startDay = taskDragState.originalTask.startDay + daysDelta;
+          newTask.startDay = Math.max(projectStartDay, Math.min(projectEndDay - newTask.duration + 1, newTask.startDay));
+          newTask.row = Math.max(0, (taskDragState.originalTask.row || 0) + rowsDelta);
+          
+        } else if (taskDragState.type === 'resize-left') {
+          // تعديل الطرف الأيسر فقط
+          let newStartDay = taskDragState.originalTask.startDay + daysDelta;
+          const originalEndDay = taskDragState.originalTask.startDay + taskDragState.originalTask.duration - 1;
+          
+          // ★ تطبيق القيود أولاً قبل حساب المدة
+          newStartDay = Math.max(projectStartDay, newStartDay);
+          
+          // حساب المدة الجديدة بناءً على الموقع المقيد
+          let newDuration = originalEndDay - newStartDay + 1;
+          
+          // ★ إذا أصبحت المدة أقل من أو تساوي صفر، حولها إلى milestone
+          if (newDuration <= 0) {
+            newTask.type = 'milestone';
+            newTask.duration = 0;
+            newTask.startDay = originalEndDay;
+          } else {
+            newTask.startDay = newStartDay;
+            newTask.duration = newDuration;
+            newTask.type = 'task';
+          }
+          
+        } else if (taskDragState.type === 'resize-right') {
+          // تعديل الطرف الأيمن فقط
+          let newEndDay = taskDragState.originalTask.startDay + taskDragState.originalTask.duration - 1 + daysDelta;
+          
+          // ★ تطبيق القيود على نهاية المهمة
+          newEndDay = Math.min(projectEndDay, newEndDay);
+          
+          let newDuration = newEndDay - taskDragState.originalTask.startDay + 1;
+          
+          // ★ إذا أصبحت المدة أقل من أو تساوي صفر، حولها إلى milestone
+          if (newDuration <= 0) {
+            newTask.type = 'milestone';
+            newTask.duration = 0;
+            newTask.startDay = taskDragState.originalTask.startDay;
+          } else {
+            newTask.duration = newDuration;
+            newTask.type = 'task';
+          }
         }
-      } else if (taskDragState.type === 'resize-right') {
-        // تعديل الطرف الأيمن فقط
-        let newEndDay = taskDragState.originalTask.startDay + taskDragState.originalTask.duration - 1 + daysDelta;
-        newEndDay = Math.min(projectEndDay, newEndDay); // منع التجاوز لنهاية المشروع
-        newTask.duration = Math.max(1, newEndDay - newTask.startDay + 1); // ضمان مدة لا تقل عن يوم
-        // إبقاء startDay ثابتًا
-        if (newTask.startDay + newTask.duration - 1 > projectEndDay) {
-          newTask.duration = projectEndDay - newTask.startDay + 1;
+
+        // ضمان البقاء في حدود المشروع للمهام العادية (تحقق إضافي)
+        if (newTask.type === 'task') {
+          newTask.startDay = Math.max(projectStartDay, newTask.startDay);
+          newTask.startDay = Math.min(newTask.startDay, projectEndDay - newTask.duration + 1);
+        } else {
+          // للـ milestones
+          newTask.startDay = Math.max(projectStartDay, Math.min(projectEndDay, newTask.startDay));
         }
+
+        setTaskDragState(prev => ({ ...prev, task: newTask }));
       }
 
-      // تغيير النوع مؤقتًا للعرض
-      if (newTask.duration > 0 && newTask.type === 'milestone') {
-        newTask.type = 'task';
-      } else if (newTask.duration <= 0 && newTask.type === 'task') {
-        newTask.type = 'milestone';
-        newTask.duration = 0;
-      }
-
-      // ضمان البقاء في حدود المشروع
-      newTask.startDay = Math.max(projectStartDay, newTask.startDay);
-      if (newTask.type === 'task') {
-        newTask.startDay = Math.min(newTask.startDay, projectEndDay - newTask.duration + 1);
-      } else {
-        newTask.startDay = Math.min(newTask.startDay, projectEndDay);
-      }
-
-      setTaskDragState(prev => ({ ...prev, task: newTask }));
-    }
     else if (viewState.isDragging) {
       setViewState(prev => ({
         ...prev,
@@ -4337,7 +4262,7 @@ const applyTemplateToNode = useCallback((template: any, dropX: number, dropY: nu
   }, []);
 
 
-  useEffect(() => {
+ useEffect(() => {
   const canvas = canvasRef.current;
   if (!canvas) return;
 
@@ -4346,16 +4271,20 @@ const applyTemplateToNode = useCallback((template: any, dropX: number, dropY: nu
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    // أولاً: أزرار الهيدر (لو عندك)
+    // أولاً: أزرار الهيدر
     if (handleTimeAxisButtonClick(x, y)) return;
 
-    // نسمح بالنقر داخل الشريط الجانبي فقط
+    // فقط داخل الشريط الجانبي وتحت الهيدر
     if (x <= CANVAS_CONFIG.leftPanelWidth && y >= CANVAS_CONFIG.headerHeight) {
+      // فحص النقر على الصور بدقة أكبر
       for (let i = imageHitRectsRef.current.length - 1; i >= 0; i--) {
         const r = imageHitRectsRef.current[i];
         if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
-          setPopupImage({ nodeId: r.nodeId, url: r.url });
-          break;
+          // تأكد من وجود صورة فعلاً قبل فتح المودال
+          if (r.url && r.url.trim() !== '') {
+            setPopupImage({ nodeId: r.nodeId, url: r.url });
+          }
+          return; // منع النقر من الوصول لمعالجات أخرى
         }
       }
     }
@@ -4364,7 +4293,6 @@ const applyTemplateToNode = useCallback((template: any, dropX: number, dropY: nu
   canvas.addEventListener('click', onClick);
   return () => canvas.removeEventListener('click', onClick);
 }, [handleTimeAxisButtonClick, CANVAS_CONFIG.leftPanelWidth, CANVAS_CONFIG.headerHeight]);
-
 
 
   // دالة لتحديث imageUrl للعقدة

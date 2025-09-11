@@ -300,7 +300,6 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
                   title="فتح الفلاتر"
                 >
                   <Filter size={16} />
-                  <span>فلتر</span>
                   {hasActiveFilters(activeFilters || {}) && (
                     <span className="bg-white text-blue-600 text-xs px-1.5 py-0.5 rounded-full font-bold">
                       {Object.keys(activeFilters || {}).length}

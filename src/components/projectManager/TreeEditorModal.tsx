@@ -1,125 +1,35 @@
 import React, { useState, useCallback } from 'react';
 import { 
   X, Plus, Trash2, Edit2, ChevronRight, ChevronDown,
-  FolderPlus, Save, Building2, AlertTriangle,
-  ArrowUp, ArrowDown,
-  ArrowDownCircle,
-  ArrowUpCircle
+  Save, GripVertical
 } from 'lucide-react';
 import { HierarchyNode } from './GanttCanvas';
 
-interface Task {
-  id: string;
-  content: string;
-  startDay: number;
-  duration: number;
-  color: string;
-  progress?: number;
-  author?: string;
-  priority?: number;
-  row?: number;
-  type?: 'task' | 'milestone';
-}
-
-interface TreeEditorModalProps {
-  isOpen: boolean;
+interface TreeEditorSidebarProps {
+  isVisible: boolean;
   onClose: () => void;
   hierarchyTree: HierarchyNode[];
   onUpdateTree: (newTree: HierarchyNode[]) => void;
   onAddSection: (parentId: string, name: string) => HierarchyNode;
-  onAddTask: (nodeId: string, task: Partial<Task>) => void;
   onEditNode: (nodeId: string, newContent: string) => void;
   onDeleteNode: (nodeId: string) => void;
 }
 
-const DeleteConfirmationModal: React.FC<{
-  isOpen: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
-  itemName: string;
-  itemType: string;
-}> = ({ isOpen, onConfirm, onCancel, itemName, itemType }) => {
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-red-200">
-        <div className="flex items-center justify-between p-4 border-b border-red-100">
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
-              <AlertTriangle size={18} className="text-red-600" />
-            </div>
-            <h3 className="text-lg font-semibold text-slate-900">تأكيد الحذف</h3>
-          </div>
-        </div>
-        <div className="p-4">
-          <p className="text-sm text-slate-700 mb-2">
-            هل أنت متأكد من حذف {itemType}:
-          </p>
-          <p className="text-sm font-semibold text-slate-900 bg-slate-50 p-3 rounded-lg border border-slate-200">
-            "{itemName}"
-          </p>
-          <p className="text-xs text-red-600 mt-3 font-medium">
-            تحذير: لا يمكن التراجع عن هذا الإجراء
-          </p>
-        </div>
-        <div className="flex items-center justify-end space-x-3 p-4 border-t border-slate-100">
-          <button
-            onClick={onCancel}
-            className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-300 transition-all duration-200"
-          >
-            إلغاء
-          </button>
-          <button
-            onClick={onConfirm}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition-all duration-200 shadow-md hover:shadow-lg"
-          >
-            حذف نهائياً
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const deepClone = (obj: any): any => {
-  if (obj === null || typeof obj !== 'object') return obj;
-  if (Array.isArray(obj)) return obj.map(deepClone);
-  const clone = {};
-  for (const key in obj) {
-    clone[key] = deepClone(obj[key]);
-  }
-  return clone;
-};
-
-export const TreeEditorModal: React.FC<TreeEditorModalProps> = ({
-  isOpen,
+export const TreeEditorSidebar: React.FC<TreeEditorSidebarProps> = ({
+  isVisible,
   onClose,
   hierarchyTree,
   onUpdateTree,
   onAddSection,
-  onAddTask,
   onEditNode,
   onDeleteNode
 }) => {
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
-  const [newSectionName, setNewSectionName] = useState('');
-  const [showAddSection, setShowAddSection] = useState<string | null>(null);
-  const [addPosition, setAddPosition] = useState<'above' | 'below' | 'child' | null>(null);
-
-  const [deleteConfirmation, setDeleteConfirmation] = useState<{
-    isOpen: boolean;
-    nodeId: string;
-    nodeName: string;
-    nodeType: string;
-  }>({
-    isOpen: false,
-    nodeId: '',
-    nodeName: '',
-    nodeType: ''
-  });
+  const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
+  const [dragOverNodeId, setDragOverNodeId] = useState<string | null>(null);
+  const [dropPosition, setDropPosition] = useState<'before' | 'after' | 'inside' | null>(null);
 
   const toggleExpanded = useCallback((nodeId: string) => {
     setExpandedNodes(prev => {
@@ -147,134 +57,163 @@ export const TreeEditorModal: React.FC<TreeEditorModalProps> = ({
     setEditContent('');
   }, []);
 
-  const findNodePath = useCallback((tree: HierarchyNode[], nodeId: string, path: number[] = []): { parent: HierarchyNode[] | null, index: number } | null => {
-    for (let i = 0; i < tree.length; i++) {
-      if (tree[i].id === nodeId) {
-        return { parent: null, index: i };
-      }
-      const found = findNodePath(tree[i].children, nodeId, [...path, i]);
-      if (found) {
-        if (found.parent === null) {
-          found.parent = tree[i].children;
+  const handleDragStart = useCallback((e: React.DragEvent, nodeId: string) => {
+    setDraggedNodeId(nodeId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', nodeId);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, nodeId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const height = rect.height;
+    
+    if (y < height * 0.33) {
+      setDropPosition('before');
+    } else if (y > height * 0.66) {
+      setDropPosition('after');
+    } else {
+      setDropPosition('inside');
+    }
+    
+    setDragOverNodeId(nodeId);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setDragOverNodeId(null);
+    setDropPosition(null);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, targetNodeId: string) => {
+    e.preventDefault();
+    
+    if (!draggedNodeId || draggedNodeId === targetNodeId) {
+      setDraggedNodeId(null);
+      setDragOverNodeId(null);
+      setDropPosition(null);
+      return;
+    }
+
+    moveNode(draggedNodeId, targetNodeId, dropPosition || 'inside');
+    
+    setDraggedNodeId(null);
+    setDragOverNodeId(null);
+    setDropPosition(null);
+  }, [draggedNodeId, dropPosition]);
+
+  const moveNode = useCallback((sourceId: string, targetId: string, position: 'before' | 'after' | 'inside') => {
+    const newTree = JSON.parse(JSON.stringify(hierarchyTree));
+    
+    let sourceNode: HierarchyNode | null = null;
+    
+    const removeNode = (nodes: HierarchyNode[]): HierarchyNode[] => {
+      return nodes.filter(node => {
+        if (node.id === sourceId) {
+          sourceNode = node;
+          return false;
         }
-        return found;
-      }
-    }
-    return null;
-  }, []);
-
-  const findNodeById = useCallback((tree: HierarchyNode[], nodeId: string): HierarchyNode | null => {
-    for (const node of tree) {
-      if (node.id === nodeId) return node;
-      const found = findNodeById(node.children, nodeId);
-      if (found) return found;
-    }
-    return null;
-  }, []);
-
-  const handleAddSection = useCallback((parentId: string, nodeId: string | null, position: 'above' | 'below' | 'child') => {
-    if (newSectionName.trim()) {
-      const newTree = deepClone(hierarchyTree) as HierarchyNode[];
-      const pathInfo = nodeId ? findNodePath(newTree, nodeId) : { parent: null, index: -1 };
+        node.children = removeNode(node.children);
+        return true;
+      });
+    };
+    
+    const treeWithoutSource = removeNode(newTree);
+    
+    if (!sourceNode) return;
+    
+    const insertNode = (nodes: HierarchyNode[]): HierarchyNode[] => {
+      const result: HierarchyNode[] = [];
       
-      if (parentId === 'root') {
-        const newNode = onAddSection(parentId, newSectionName.trim());
-        newTree.splice(position === 'above' ? 0 : newTree.length, 0, newNode);
-      } else if (position === 'child') {
-        const parentNode = findNodeById(newTree, parentId);
-        if (parentNode) {
-          const newNode = onAddSection(parentId, newSectionName.trim());
-          parentNode.children.push(newNode);
+      for (const node of nodes) {
+        if (node.id === targetId) {
+          if (position === 'before') {
+            result.push(sourceNode!);
+            result.push({ ...node, children: insertNode(node.children) });
+          } else if (position === 'after') {
+            result.push({ ...node, children: insertNode(node.children) });
+            result.push(sourceNode!);
+          } else {
+            result.push({
+              ...node,
+              children: [...insertNode(node.children), sourceNode!]
+            });
+          }
+        } else {
+          result.push({
+            ...node,
+            children: insertNode(node.children)
+          });
         }
-      } else if (pathInfo && pathInfo.parent) {
-        const newNode = onAddSection(parentId, newSectionName.trim());
-        pathInfo.parent.splice(position === 'above' ? pathInfo.index : pathInfo.index + 1, 0, newNode);
       }
       
-      onUpdateTree(newTree);
-      setNewSectionName('');
-      setShowAddSection(null);
-      setAddPosition(null);
-      setExpandedNodes(prev => new Set([...prev, parentId]));
-    }
-  }, [newSectionName, onAddSection, hierarchyTree, onUpdateTree, findNodePath, findNodeById]);
+      return result;
+    };
+    
+    const finalTree = insertNode(treeWithoutSource);
+    onUpdateTree(finalTree);
+  }, [hierarchyTree, onUpdateTree]);
 
-  const handleDeleteClick = useCallback((node: HierarchyNode) => {
-    const nodeType = node.type === 'section' ? 'القسم' : 'العنصر';
-    setDeleteConfirmation({
-      isOpen: true,
-      nodeId: node.id,
-      nodeName: node.content,
-      nodeType
-    });
-  }, []);
+  const handleAddNewSection = useCallback((parentId: string) => {
+    const newNode = onAddSection(parentId, 'قسم جديد');
+    setExpandedNodes(prev => new Set([...prev, parentId]));
+  }, [onAddSection]);
 
-  const handleDeleteConfirm = useCallback(() => {
-    onDeleteNode(deleteConfirmation.nodeId);
-    setDeleteConfirmation({
-      isOpen: false,
-      nodeId: '',
-      nodeName: '',
-      nodeType: ''
-    });
-  }, [deleteConfirmation.nodeId, onDeleteNode]);
-
-  const handleDeleteCancel = useCallback(() => {
-    setDeleteConfirmation({
-      isOpen: false,
-      nodeId: '',
-      nodeName: '',
-      nodeType: ''
-    });
-  }, []);
-
-  const handleMoveUp = useCallback((nodeId: string) => {
-    const newTree = deepClone(hierarchyTree) as HierarchyNode[];
-    const pathInfo = findNodePath(newTree, nodeId);
-    if (!pathInfo || !pathInfo.parent || pathInfo.index === 0) return;
-
-    const temp = pathInfo.parent[pathInfo.index - 1];
-    pathInfo.parent[pathInfo.index - 1] = pathInfo.parent[pathInfo.index];
-    pathInfo.parent[pathInfo.index] = temp;
-    onUpdateTree(newTree);
-  }, [hierarchyTree, onUpdateTree, findNodePath]);
-
-  const handleMoveDown = useCallback((nodeId: string) => {
-    const newTree = deepClone(hierarchyTree) as HierarchyNode[];
-    const pathInfo = findNodePath(newTree, nodeId);
-    if (!pathInfo || !pathInfo.parent || pathInfo.index === pathInfo.parent.length - 1) return;
-
-    const temp = pathInfo.parent[pathInfo.index + 1];
-    pathInfo.parent[pathInfo.index + 1] = pathInfo.parent[pathInfo.index];
-    pathInfo.parent[pathInfo.index] = temp;
-    onUpdateTree(newTree);
-  }, [hierarchyTree, onUpdateTree, findNodePath]);
+  const renderDropIndicator = useCallback((nodeId: string) => {
+    if (dragOverNodeId !== nodeId || !dropPosition) return null;
+    
+    const indicatorClass = dropPosition === 'before' 
+      ? 'absolute top-0 left-0 right-0 h-0.5 bg-blue-500'
+      : dropPosition === 'after'
+      ? 'absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500'
+      : 'absolute inset-0 border-2 border-blue-500 border-dashed bg-blue-50/30 rounded';
+    
+    return <div className={indicatorClass} />;
+  }, [dragOverNodeId, dropPosition]);
 
   const renderTreeNode = useCallback((node: HierarchyNode, level: number = 0) => {
     const isExpanded = expandedNodes.has(node.id);
     const hasChildren = node.children.length > 0;
     const isEditing = editingNodeId === node.id;
-    const isShowingAddSection = showAddSection === node.id;
+    const isDragging = draggedNodeId === node.id;
 
     return (
       <div key={node.id} className="relative">
-        {/* صف العقدة */}
         <div
-          className={`relative flex items-center py-3 px-4 hover:bg-slate-50/80 group transition-all duration-200
-            ${level > 0 ? 'before:absolute before:top-1/2 before:-left-6 before:w-6 before:h-0.5 before:bg-slate-300' : ''}
-            ${node.type === 'project' ? 'bg-gradient-to-r from-blue-50/50 to-indigo-50/30' : ''}
+          className={`
+            relative flex items-center py-2 px-3 hover:bg-gray-50 group transition-all duration-200
+            ${isDragging ? 'opacity-50' : ''}
+            ${node.type === 'project' ? 'bg-gray-50 border-l-4 border-gray-400' : ''}
           `}
-          style={{ paddingLeft: `${level === 0 ? 0 : level * 24}px` }}
+          style={{ paddingLeft: `${level * 20 + 12}px` }}
+          draggable={!isEditing}
+          onDragStart={(e) => handleDragStart(e, node.id)}
+          onDragOver={(e) => handleDragOver(e, node.id)}
+          onDragLeave={handleDragLeave}
+          onDrop={(e) => handleDrop(e, node.id)}
         >
+          {renderDropIndicator(node.id)}
+          
+          {/* مقبض السحب */}
+          <div className="opacity-0 group-hover:opacity-100 mr-3 cursor-grab">
+            <GripVertical size={16} className="text-gray-400" />
+          </div>
+
           {/* زر الطي/الفتح */}
           <button
             onClick={() => toggleExpanded(node.id)}
-            className="p-1.5 hover:bg-slate-200/70 rounded-md transition-all duration-200 mr-3 shadow-sm"
+            className="p-1 hover:bg-gray-200 rounded mr-3"
           >
-            {isExpanded ? (
-              <ChevronDown size={16} className="text-slate-600" />
+            {hasChildren ? (
+              isExpanded ? (
+                <ChevronDown size={16} className="text-gray-600" />
+              ) : (
+                <ChevronRight size={16} className="text-gray-600" />
+              )
             ) : (
-              <ChevronRight size={16} className="text-slate-600" />
+              <div className="w-4 h-4" />
             )}
           </button>
 
@@ -286,79 +225,60 @@ export const TreeEditorModal: React.FC<TreeEditorModalProps> = ({
                   type="text"
                   value={editContent}
                   onChange={(e) => setEditContent(e.target.value)}
-                  className="flex-1 px-4 py-2.5 border-2 border-blue-300 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/50 bg-white shadow-sm"
+                  className="flex-1 px-3 py-2 text-base border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleEditSave();
                     if (e.key === 'Escape') handleEditCancel();
                   }}
                 />
-                <button onClick={handleEditSave} className="p-2 text-emerald-600 hover:bg-emerald-100 rounded-lg">
+                <button 
+                  onClick={handleEditSave} 
+                  className="p-2 text-green-600 hover:bg-green-100 rounded"
+                >
                   <Save size={16} />
                 </button>
-                <button onClick={handleEditCancel} className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg">
+                <button 
+                  onClick={handleEditCancel} 
+                  className="p-2 text-gray-500 hover:bg-gray-100 rounded"
+                >
                   <X size={16} />
                 </button>
               </div>
             ) : (
               <div className="flex items-center justify-between">
-                <span className={`text-sm truncate ${
-                  node.type === 'project' ? 'font-semibold text-slate-900' :
-                  node.type === 'section' ? 'font-medium text-slate-800' :
-                  'font-normal text-slate-700'
+                <span className={`text-base leading-relaxed ${
+                  node.type === 'project' ? 'font-bold text-gray-900' :
+                  node.type === 'section' ? 'font-semibold text-gray-800' :
+                  'font-medium text-gray-700'
                 }`}>
                   {node.content}
                 </span>
-                <div className="opacity-0 group-hover:opacity-100 flex items-center gap-2">
-                  {(node.type === 'project' || node.type === 'section') && (
-                    <>
-                      <button
-                        onClick={() => {
-                          setShowAddSection(node.id);
-                          setAddPosition('above');
-                        }}
-                        className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg"
-                        title="إضافة قسم فوق الحالي"
-                      >
-                        <ArrowUp size={14} />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setShowAddSection(node.id);
-                          setAddPosition('below');
-                        }}
-                        className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg"
-                        title="إضافة قسم تحت الحالي"
-                      >
-                        <ArrowDown size={14} />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setShowAddSection(node.id);
-                          setAddPosition('child');
-                        }}
-                        className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg"
-                        title="إضافة قسم فرعي"
-                      >
-                        <FolderPlus size={14} />
-                      </button>
-                    </>
-                  )}
-                  <button onClick={() => handleEditStart(node)} className="p-2 text-amber-600 hover:bg-amber-100 rounded-lg" title="تعديل">
-                    <Edit2 size={14} />
+                
+                {/* أزرار التحكم */}
+                <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1">
+                  <button
+                    onClick={() => handleAddNewSection(node.id)}
+                    className="p-2 text-blue-600 hover:bg-blue-100 rounded"
+                    title="إضافة قسم فرعي"
+                  >
+                    <Plus size={16} />
+                  </button>
+                  <button
+                    onClick={() => handleEditStart(node)}
+                    className="p-2 text-gray-600 hover:bg-gray-100 rounded"
+                    title="تعديل"
+                  >
+                    <Edit2 size={16} />
                   </button>
                   {node.type !== 'project' && (
-                    <>
-                      <button onClick={() => handleMoveUp(node.id)} className="p-2 text-indigo-600 hover:bg-indigo-100 rounded-lg" title="تحريك لأعلى">
-                        <ArrowUpCircle size={14} />
-                      </button>
-                      <button onClick={() => handleMoveDown(node.id)} className="p-2 text-indigo-600 hover:bg-indigo-100 rounded-lg" title="تحريك لأسفل">
-                        <ArrowDownCircle size={14} />
-                      </button>
-                      <button onClick={() => handleDeleteClick(node)} className="p-2 text-red-600 hover:bg-red-100 rounded-lg" title="حذف">
-                        <Trash2 size={14} />
-                      </button>
-                    </>
+                    <button
+                      onClick={() => onDeleteNode(node.id)}
+                      className="p-2 text-red-600 hover:bg-red-100 rounded"
+                      title="حذف"
+                    >
+                      <Trash2 size={16} />
+                    </button>
                   )}
                 </div>
               </div>
@@ -366,154 +286,63 @@ export const TreeEditorModal: React.FC<TreeEditorModalProps> = ({
           </div>
         </div>
 
-        {/* نموذج إضافة قسم */}
-        {isShowingAddSection && (
-          <div className="mx-8 mt-2 mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/60 rounded-lg shadow-sm">
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                placeholder={
-                  addPosition === 'above' ? 'اسم القسم الجديد (فوق الحالي)' :
-                  addPosition === 'below' ? 'اسم القسم الجديد (تحت الحالي)' :
-                  'اسم القسم الفرعي الجديد'
-                }
-                value={newSectionName}
-                onChange={(e) => setNewSectionName(e.target.value)}
-                className="flex-1 px-3 py-2 border-2 border-blue-300/70 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/50 bg-white/80 shadow-sm"
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleAddSection(node.id, addPosition && addPosition !== 'child' ? node.id : null, addPosition || 'child');
-                  if (e.key === 'Escape') {
-                    setShowAddSection(null);
-                    setAddPosition(null);
-                  }
-                }}
-              />
-              <button
-                onClick={() => handleAddSection(node.id, addPosition && addPosition !== 'child' ? node.id : null, addPosition || 'child')}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-all duration-200 shadow-md hover:shadow-lg"
-              >
-                إضافة
-              </button>
-              <button
-                onClick={() => {
-                  setShowAddSection(null);
-                  setAddPosition(null);
-                }}
-                className="px-4 py-2 bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-400 transition-all duration-200"
-              >
-                إلغاء
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* الأبناء + الخط العمودي */}
-        {isExpanded && node.children.length > 0 && (
-          <div className="relative ml-6 pl-6 border-l-2 border-slate-300">
+        {/* الأطفال */}
+        {isExpanded && hasChildren && (
+          <div className="border-l-2 border-gray-200 ml-8">
             {node.children.map(child => renderTreeNode(child, level + 1))}
           </div>
         )}
       </div>
     );
-  }, [expandedNodes, editingNodeId, editContent, showAddSection, addPosition, toggleExpanded, handleEditStart, handleEditSave, handleEditCancel, handleAddSection, handleDeleteClick, handleMoveUp, handleMoveDown]);
+  }, [
+    expandedNodes, editingNodeId, editContent, draggedNodeId, dragOverNodeId, dropPosition,
+    toggleExpanded, handleEditStart, handleEditSave, handleEditCancel, 
+    handleDragStart, handleDragOver, handleDragLeave, handleDrop,
+    handleAddNewSection, onDeleteNode, renderDropIndicator
+  ]);
 
-  if (!isOpen) return null;
+  if (!isVisible) return null;
 
   return (
-    <>
-      <div className="fixed inset-0 bg-white/20 backdrop-blur-md flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[80vh] flex flex-col">
-          {/* Header */}
-          <div className="flex items-center justify-between p-4">
-            <div className="flex items-center space-x-3">
-              <img src="/AVAMENT_big.png" alt="Avament" className="w-8 h-8 object-contain" />
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">محرر هيكل المشروع</h2>
-                <p className="text-xs text-slate-600">إدارة وتنظيم الأقسام والمهام</p>
-              </div>
-            </div>
-            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg">
-              <X size={18} className="text-slate-500" />
-            </button>
-          </div>
-
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto p-4">
-            {hierarchyTree.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 bg-slate-200 rounded-xl flex items-center justify-center mx-auto mb-4">
-                  <Building2 size={28} className="text-slate-400" />
-                </div>
-                <h3 className="text-base font-semibold text-slate-900 mb-2">لا توجد مشاريع بعد</h3>
-                <p className="text-sm text-slate-500 mb-4">ابدأ بإنشاء مشروعك الأول</p>
-                <button onClick={() => setShowAddSection('root')} className="px-6 py-3 bg-blue-600 text-white rounded-lg">
-                  إضافة مشروع جديد
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {hierarchyTree.map(node => renderTreeNode(node, 0))}
-              </div>
-            )}
-
-            {/* نموذج إضافة مشروع في الجذر */}
-            {showAddSection === 'root' && (
-              <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/60 rounded-lg shadow-sm">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    placeholder="اسم المشروع الجديد"
-                    value={newSectionName}
-                    onChange={(e) => setNewSectionName(e.target.value)}
-                    className="flex-1 px-3 py-2 border-2 border-blue-300/70 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/50 bg-white/80 shadow-sm"
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleAddSection('root', null, 'below');
-                      if (e.key === 'Escape') {
-                        setShowAddSection(null);
-                        setAddPosition(null);
-                      }
-                    }}
-                  />
-                  <button
-                    onClick={() => handleAddSection('root', null, 'below')}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-all duration-200 shadow-md hover:shadow-lg"
-                  >
-                    إضافة
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowAddSection(null);
-                      setAddPosition(null);
-                    }}
-                    className="px-6 py-2 bg-slate-300 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-400 transition-all duration-200"
-                  >
-                    إلغاء
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Footer */}
-          <div className="flex items-center justify-between p-4">
-            <button onClick={() => setShowAddSection('root')} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg">
-              <Plus size={16} />
-              <span>إضافة مشروع</span>
-            </button>
-            <button onClick={onClose} className="px-6 py-2 bg-slate-600 text-white rounded-lg">إغلاق</button>
-          </div>
+    <div className={`
+      fixed top-14 left-0 h-[calc(100vh-3.5rem)] w-96 bg-white shadow-xl z-30
+      transition-transform duration-300 ease-in-out
+      ${isVisible ? 'translate-x-0' : '-translate-x-full'}
+      border-r border-gray-200
+    `}>
+      {/* Header */}
+      <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
+        <div>
+          <h2 className="text-lg font-bold text-gray-900">محرر هيكل المشروع</h2>
+          <p className="text-sm text-gray-600 mt-1">سحب وإفلات لإعادة الترتيب</p>
         </div>
+        <button
+          onClick={onClose}
+          className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
+        >
+          <X size={20} className="text-gray-500" />
+        </button>
       </div>
 
-      <DeleteConfirmationModal
-        isOpen={deleteConfirmation.isOpen}
-        onConfirm={handleDeleteConfirm}
-        onCancel={handleDeleteCancel}
-        itemName={deleteConfirmation.nodeName}
-        itemType={deleteConfirmation.nodeType}
-      />
-    </>
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {hierarchyTree.length === 0 ? (
+          <div className="text-center py-16">
+            <h3 className="text-xl font-bold text-gray-900 mb-3">لا توجد مشاريع بعد</h3>
+            <p className="text-base text-gray-600 mb-8">ابدأ بإنشاء مشروعك الأول</p>
+            <button 
+              onClick={() => handleAddNewSection('root')}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg text-base font-semibold hover:bg-blue-700 transition-colors"
+            >
+              إضافة مشروع جديد
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {hierarchyTree.map(node => renderTreeNode(node, 0))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 };

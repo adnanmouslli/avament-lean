@@ -2,8 +2,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { HierarchyNode, Task } from './GanttCanvas';
-import { X, Edit3, Save, Calendar, User, Clock, Target, CalendarDays } from 'lucide-react';
-import { Slider } from '../ui/slider';
+import { X, Edit3, Check, User, Clock, Target, Calendar } from 'lucide-react';
 
 interface TasksSummaryModalProps {
   isOpen: boolean;
@@ -11,7 +10,7 @@ interface TasksSummaryModalProps {
   node: HierarchyNode;
   allTasks: Array<{ task: Task; nodePath: string; nodeId: string }>;
   onUpdateTaskProgress: (taskId: string, nodeId: string, progress: number) => void;
-  projectStartDate?: Date; // تاريخ بداية المشروع
+  projectStartDate?: Date;
 }
 
 export const TasksSummaryModal: React.FC<TasksSummaryModalProps> = ({
@@ -20,54 +19,38 @@ export const TasksSummaryModal: React.FC<TasksSummaryModalProps> = ({
   node,
   allTasks,
   onUpdateTaskProgress,
-  projectStartDate = new Date() // تاريخ افتراضي إذا لم يتم تمريره
+  projectStartDate = new Date()
 }) => {
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [tempProgress, setTempProgress] = useState<number>(0);
 
   if (!isOpen) return null;
 
-  // حساب تاريخ البداية والنهاية للمهمة
   const getTaskDates = (task: Task) => {
     const startDate = new Date(projectStartDate);
     startDate.setDate(startDate.getDate() + task.startDay);
-    
     const endDate = new Date(startDate);
     endDate.setDate(endDate.getDate() + task.duration - 1);
-    
     return { startDate, endDate };
   };
 
-  // تنسيق التاريخ للعرض
-    const formatDate = (date: Date) => {
-    return date.toLocaleDateString('en-GB', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-    }).split('/').reverse().join('/'); // تنسيق: YYYY/MM/DD
-    };
-
-  // حساب مدة المهمة بالأيام
-  const calculateDuration = (startDate: Date, endDate: Date) => {
-    const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-    return diffDays;
+  const formatDate = (date: Date) => {
+    return date.toLocaleDateString('ar', { month: 'short', day: 'numeric' });
   };
 
   const getProgressColor = (progress: number) => {
-    if (progress >= 100) return 'emerald';
-    if (progress >= 75) return 'blue';
-    if (progress >= 50) return 'amber';
-    if (progress >= 25) return 'orange';
-    return 'red';
+    if (progress >= 100) return 'bg-green-500';
+    if (progress >= 75) return 'bg-blue-500';
+    if (progress >= 50) return 'bg-yellow-500';
+    if (progress >= 25) return 'bg-orange-500';
+    return 'bg-red-500';
   };
 
-  const getStatusInfo = (progress: number) => {
-    if (progress >= 100) return { text: 'مكتملة', bgColor: 'bg-emerald-50', textColor: 'text-emerald-700', borderColor: 'border-emerald-200' };
-    if (progress >= 75) return { text: 'متقدمة', bgColor: 'bg-blue-50', textColor: 'text-blue-700', borderColor: 'border-blue-200' };
-    if (progress >= 50) return { text: 'في التقدم', bgColor: 'bg-amber-50', textColor: 'text-amber-700', borderColor: 'border-amber-200' };
-    if (progress >= 25) return { text: 'بداية العمل', bgColor: 'bg-orange-50', textColor: 'text-orange-700', borderColor: 'border-orange-200' };
-    return { text: 'لم تبدأ', bgColor: 'bg-red-50', textColor: 'text-red-700', borderColor: 'border-red-200' };
+  const getStatusBadge = (progress: number) => {
+    if (progress >= 100) return { text: 'مكتملة', class: 'bg-green-100 text-green-700' };
+    if (progress >= 50) return { text: 'جارية', class: 'bg-blue-100 text-blue-700' };
+    if (progress > 0) return { text: 'بدأت', class: 'bg-yellow-100 text-yellow-700' };
+    return { text: 'لم تبدأ', class: 'bg-gray-100 text-gray-700' };
   };
 
   const handleStartEdit = (task: Task) => {
@@ -85,175 +68,193 @@ export const TasksSummaryModal: React.FC<TasksSummaryModalProps> = ({
     setTempProgress(0);
   };
 
-  const completedTasks = allTasks.filter(t => (t.task.progress || 0) >= 100).length;
-  const inProgressTasks = allTasks.filter(t => (t.task.progress || 0) > 0 && (t.task.progress || 0) < 100).length;
-  const notStartedTasks = allTasks.filter(t => (t.task.progress || 0) === 0).length;
+  const stats = {
+    completed: allTasks.filter(t => (t.task.progress || 0) >= 100).length,
+    inProgress: allTasks.filter(t => (t.task.progress || 0) > 0 && (t.task.progress || 0) < 100).length,
+    notStarted: allTasks.filter(t => (t.task.progress || 0) === 0).length
+  };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[85vh] flex flex-col border border-gray-200">
-        
-        {/* Fixed Header */}
-        <div className="bg-gradient-to-r from-slate-700 to-slate-600 text-white p-4 rounded-t-xl flex-shrink-0">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center space-x-3 space-x-reverse">
+    <>
+      {/* Backdrop */}
+      <div 
+        className={`
+          fixed inset-0 bg-black transition-opacity duration-300 z-30
+          ${isOpen ? 'opacity-20' : 'opacity-0 pointer-events-none'}
+        `}
+        onClick={onClose}
+      />
+      
+      {/* Sidebar */}
+      <div className={`
+        fixed top-14 right-0 h-[calc(100vh-3.5rem)] w-96 z-40
+        bg-white shadow-2xl border-l border-gray-200
+        transition-all duration-500 ease-out
+        ${isOpen ? 
+          'translate-x-0 opacity-100' : 
+          'translate-x-full opacity-0'
+        }
+      `}>
+        <div className="flex flex-col h-full">
+          {/* Header */}
+          <div className={`
+            flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50
+            transition-all duration-700 delay-100 ease-out
+            ${isOpen ? 
+              'transform translate-y-0 opacity-100' : 
+              'transform -translate-y-4 opacity-0'
+            }
+          `}>
+            <div className="flex items-center space-x-3">
+              <div className={`
+                transition-all duration-500 delay-200 ease-out
+                ${isOpen ? 
+                  'transform rotate-0 scale-100' : 
+                  'transform rotate-180 scale-0'
+                }
+              `}>
+                <Target className="text-blue-600" size={20} />
+              </div>
               <div>
-                <h2 className="text-lg font-bold">{node.content}</h2>
+                <h3 className={`
+                  text-lg font-semibold text-gray-900
+                  transition-all duration-500 delay-300 ease-out
+                  ${isOpen ? 
+                    'transform translate-x-0 opacity-100' : 
+                    'transform translate-x-4 opacity-0'
+                  }
+                `}>
+                  مهام القسم
+                </h3>
+                <p className="text-sm text-gray-500 truncate max-w-48">{node.content}</p>
               </div>
             </div>
             <button
               onClick={onClose}
-              className="p-1.5 hover:bg-white/20 rounded-lg transition-colors"
+              className={`
+                p-2 hover:bg-gray-200 rounded-lg transition-all duration-300
+                ${isOpen ? 
+                  'transform rotate-0 scale-100 opacity-100' : 
+                  'transform rotate-90 scale-0 opacity-0'
+                }
+              `}
+              style={{ transitionDelay: isOpen ? '400ms' : '0ms' }}
             >
-              <X size={18} />
+              <X size={18} className="text-gray-500" />
             </button>
           </div>
 
-          {/* Compact Statistics */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-white/10 backdrop-blur rounded-lg p-2.5">
-              <div className="text-emerald-300 text-xs font-medium">مكتملة</div>
-              <div className="text-lg font-bold">{completedTasks}</div>
+          {/* Stats */}
+          <div className={`
+            grid grid-cols-3 gap-3 p-4 border-b border-gray-200 bg-gray-50
+            transition-all duration-600 ease-out
+            ${isOpen ? 
+              'transform translate-x-0 opacity-100' : 
+              'transform translate-x-8 opacity-0'
+            }
+          `}
+          style={{ transitionDelay: isOpen ? '500ms' : '0ms' }}
+          >
+            <div className="text-center">
+              <div className="text-2xl font-bold text-green-600">{stats.completed}</div>
+              <div className="text-xs text-gray-600">مكتملة</div>
             </div>
-            <div className="bg-white/10 backdrop-blur rounded-lg p-2.5">
-              <div className="text-amber-300 text-xs font-medium">قيد التنفيذ</div>
-              <div className="text-lg font-bold">{inProgressTasks}</div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-blue-600">{stats.inProgress}</div>
+              <div className="text-xs text-gray-600">جارية</div>
             </div>
-            <div className="bg-white/10 backdrop-blur rounded-lg p-2.5">
-              <div className="text-red-300 text-xs font-medium">لم تبدأ</div>
-              <div className="text-lg font-bold">{notStartedTasks}</div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-gray-600">{stats.notStarted}</div>
+              <div className="text-xs text-gray-600">لم تبدأ</div>
             </div>
           </div>
-        </div>
 
-        {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto">
-          {allTasks.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-gray-500">
-              <Target className="w-12 h-12 mb-3 text-gray-300" />
-              <h3 className="text-base font-medium mb-1">لا توجد مهام</h3>
-              <p className="text-sm">لا توجد مهام في هذا القسم حالياً</p>
-            </div>
-          ) : (
-            <div className="p-4 space-y-3">
-              {allTasks.map(({ task, nodePath, nodeId }) => {
-                const statusInfo = getStatusInfo(task.progress || 0);
+          {/* Tasks List */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {allTasks.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <Target size={40} className="mx-auto mb-4 opacity-40" />
+                <p className="text-sm">لا توجد مهام في هذا القسم</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+              {allTasks.map(({ task, nodeId }, index) => {
                 const isEditing = editingTaskId === task.id;
                 const { startDate, endDate } = getTaskDates(task);
-                const duration = calculateDuration(startDate, endDate);
+                const statusBadge = getStatusBadge(task.progress || 0);
 
                 return (
                   <div
                     key={task.id}
-                    className={`bg-white rounded-lg border transition-all duration-200 hover:shadow-sm ${statusInfo.borderColor}`}
+                    className={`
+                      bg-white border border-gray-200 rounded-md p-2 hover:shadow-sm transition-all duration-500 ease-out
+                      ${isOpen ? "translate-x-0 opacity-100" : "translate-x-4 opacity-0"}
+                    `}
+                    style={{ transitionDelay: isOpen ? `${300 + index * 40}ms` : "0ms" }}
                   >
-                    <div className={`${statusInfo.bgColor} p-3 rounded-t-lg border-b ${statusInfo.borderColor}`}>
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-2 space-x-reverse mb-1">
-                            <h3 className="text-sm font-semibold text-gray-900">{task.content}</h3>
-                            <span className={`
-                              inline-flex items-center px-2 py-0.5 rounded text-xs font-medium
-                              ${task.type === 'milestone' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'}
-                            `}>
-                              {task.type === 'milestone' ? 'معلم' : 'مهمة'}
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-600 mb-2">{nodePath}</p>
-                          
-                          {/* معلومات المهمة مع التواريخ */}
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
-                            {task.author && (
-                              <div className="flex items-center space-x-1 space-x-reverse text-blue-600">
-                                <User className="w-3 h-3" />
-                                <span className="truncate">{task.author}</span>
-                              </div>
-                            )}
-                            <div className="flex items-center space-x-1 space-x-reverse text-green-600">
-                              <Calendar className="w-3 h-3" />
-                              <span className="truncate" title={`تاريخ البداية: ${formatDate(startDate)}`}>
-                                بداية: {formatDate(startDate)}
-                              </span>
-                            </div>
-                            <div className="flex items-center space-x-1 space-x-reverse text-red-600">
-                              <CalendarDays className="w-3 h-3" />
-                              <span className="truncate" title={`تاريخ النهاية: ${formatDate(endDate)}`}>
-                                نهاية: {formatDate(endDate)}
-                              </span>
-                            </div>
-                            <div className="flex items-center space-x-1 space-x-reverse text-gray-600">
-                              <Clock className="w-3 h-3" />
-                              <span>{duration} يوم</span>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div className="text-right ml-3">
-                          <div className={`
-                            inline-flex items-center px-2 py-1 rounded-lg text-xs font-semibold
-                            ${statusInfo.bgColor} ${statusInfo.textColor} border ${statusInfo.borderColor}
-                          `}>
-                            {statusInfo.text}
-                          </div>
-                        </div>
-                      </div>
+                    {/* العنوان + الحالة */}
+                    <div className="flex items-center justify-between mb-1">
+                      <h4 className="text-xs font-medium text-gray-900 truncate">
+                        {task.content}
+                      </h4>
+                      <span className={`px-2 py-0.5 text-[10px] rounded-full ${statusBadge.class}`}>
+                        {statusBadge.text}
+                      </span>
                     </div>
 
-                    <div className="p-3">
-                      {/* Progress Section */}
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-medium text-gray-700">نسبة الإنجاز</span>
-                        <div className="flex items-center space-x-1 space-x-reverse">
-                          <span className="text-sm font-bold text-gray-900">
-                            {isEditing ? tempProgress : (task.progress || 0)}%
+                    {/* معلومات صغيرة */}
+                    <div className="flex flex-wrap gap-x-2 gap-y-1 text-[11px] text-gray-600 mb-1">
+                      {task.author && <span> {task.author}</span>}
+                    </div>
+
+                    {/* التقدم */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span></span>
+                        <div className="flex items-center gap-1">
+                          <span className="font-semibold">
+                            {isEditing ? tempProgress : task.progress || 0}%
                           </span>
                           {!isEditing ? (
                             <button
                               onClick={() => handleStartEdit(task)}
-                              className="p-1 hover:bg-gray-100 rounded transition-colors"
-                              title="تعديل"
+                              className="p-0.5 hover:bg-gray-100 rounded"
                             >
-                              <Edit3 className="w-3 h-3 text-gray-500" />
+                              <Edit3 size={12} className="text-gray-500" />
                             </button>
                           ) : (
-                            <div className="flex space-x-1 space-x-reverse">
+                            <div className="flex gap-1">
                               <button
                                 onClick={() => handleSaveProgress(task, nodeId)}
-                                className="p-1 bg-green-100 hover:bg-green-200 rounded transition-colors"
-                                title="حفظ"
+                                className="p-0.5 text-green-600 hover:bg-green-100 rounded"
                               >
-                                <Save className="w-3 h-3 text-green-600" />
+                                <Check size={12} />
                               </button>
                               <button
                                 onClick={handleCancelEdit}
-                                className="p-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
-                                title="إلغاء"
+                                className="p-0.5 text-gray-500 hover:bg-gray-100 rounded"
                               >
-                                <X className="w-3 h-3 text-gray-600" />
+                                <X size={12} />
                               </button>
                             </div>
                           )}
                         </div>
                       </div>
 
-                      {/* Progress Bar and Slider */}
                       {isEditing ? (
-                        <div className="space-y-2">
-                          <Slider
-                            name=''
-                            defaultValue={[tempProgress]}
-                            onValueChange={(value) => setTempProgress(value[0])}
-                            min={0}
-                            max={100}
-                            step={5}
-                            className="w-full"
-                          />
-                          <div className="text-xs text-gray-500 text-center">اسحب لتعديل النسبة</div>
-                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          step="5"
+                          value={tempProgress}
+                          onChange={(e) => setTempProgress(Number(e.target.value))}
+                          className="w-full h-1 bg-gray-200 rounded-lg cursor-pointer"
+                        />
                       ) : (
-                        <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div className="w-full bg-gray-200 rounded-full h-1">
                           <div
-                            className={`h-full rounded-full transition-all duration-300 bg-${getProgressColor(task.progress || 0)}-500`}
+                            className={`h-full rounded-full transition-all duration-300 ${getProgressColor(task.progress || 0)}`}
                             style={{ width: `${task.progress || 0}%` }}
                           />
                         </div>
@@ -263,26 +264,36 @@ export const TasksSummaryModal: React.FC<TasksSummaryModalProps> = ({
                 );
               })}
             </div>
-          )}
-        </div>
 
-        {/* Fixed Footer */}
-        <div className="bg-gray-50 p-3 rounded-b-xl border-t border-gray-200 flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4 space-x-reverse">
-              <div className="text-xs text-gray-600">
-                إجمالي المهام: {allTasks.length}
-              </div>
-            </div>
-            <button
-              onClick={onClose}
-              className="px-4 py-1.5 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors text-sm font-medium"
-            >
-              إغلاق
-            </button>
+            )}
           </div>
+
         </div>
       </div>
-    </div>
+
+      {/* Custom Slider Styles */}
+      <style jsx>{`
+        .slider::-webkit-slider-thumb {
+          appearance: none;
+          height: 16px;
+          width: 16px;
+          border-radius: 50%;
+          background: #3b82f6;
+          cursor: pointer;
+          border: 2px solid white;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .slider::-moz-range-thumb {
+          height: 16px;
+          width: 16px;
+          border-radius: 50%;
+          background: #3b82f6;
+          cursor: pointer;
+          border: 2px solid white;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+      `}</style>
+    </>
   );
 };
